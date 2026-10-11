@@ -1,0 +1,107 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="eck">
+      <UniqueIdentifier>{f5a12c05-5724-4c4c-9306-c0b37b6a6f34}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="pch">
+      <UniqueIdentifier>{fe295838-cf38-4b9f-a8b8-0a8715b12b26}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="播放器">
+      <UniqueIdentifier>{999c2f81-cca4-4cd8-9db2-6383186ad8f8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="工具">
+      <UniqueIdentifier>{b62e6f0d-cf3c-4b07-a37c-b8a80c61246e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="元素">
+      <UniqueIdentifier>{a4524bed-1a72-4455-91b2-0f873cba1683}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="targetver.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Resource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="CApplication.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="CWindowMain.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="pch.h">
+      <Filter>pch</Filter>
+    </ClInclude>
+    <ClInclude Include="CVePlayList.h">
+      <Filter>元素</Filter>
+    </ClInclude>
+    <ClInclude Include="CPlayer.h">
+      <Filter>播放器</Filter>
+    </ClInclude>
+    <ClInclude Include="CAudioPlayer.h">
+      <Filter>播放器</Filter>
+    </ClInclude>
+    <ClInclude Include="CFfmpeg.h">
+      <Filter>播放器</Filter>
+    </ClInclude>
+    <ClInclude Include="FfPtr.h">
+      <Filter>工具</Filter>
+    </ClInclude>
+    <ClInclude Include="CRingBuffer.h">
+      <Filter>播放器</Filter>
+    </ClInclude>
+    <ClInclude Include="CVeVideo.h">
+      <Filter>元素</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Entry.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="CApplication.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="CWindowMain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="MyEck.cpp">
+      <Filter>eck</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>pch</Filter>
+    </ClCompile>
+    <ClCompile Include="CVePlayList.cpp">
+      <Filter>元素</Filter>
+    </ClCompile>
+    <ClCompile Include="CPlayer.cpp">
+      <Filter>播放器</Filter>
+    </ClCompile>
+    <ClCompile Include="CAudioPlayer.cpp">
+      <Filter>播放器</Filter>
+    </ClCompile>
+    <ClCompile Include="CFfmpeg.cpp">
+      <Filter>播放器</Filter>
+    </ClCompile>
+    <ClCompile Include="CVeVideo.cpp">
+      <Filter>元素</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Resource.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+</Project>
