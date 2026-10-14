@@ -22,6 +22,7 @@ LRESULT CWindowMain::OnCreate()
     eck::PtcCurrent()->UpdateDefaultColor();
 
     m_Player.Initialize();
+    m_Player.OpenFile(LR"(E:\阿里云盘下载\战姬绝唱Symphogear G\11.mkv)");
 
     m_Video.Create({}, Dui::DES_VISIBLE, 0,
         0, 0, 0, 0, nullptr, this);

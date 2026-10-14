@@ -299,9 +299,6 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
     m_pContext->IASetInputLayout(m_VsAndIl.GetInputLayout());
     m_pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
-    D3D11_MAPPED_SUBRESOURCE Mapped{};
-    m_pContext->Map(m_Vb.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
-
     VERTEX Vert[4];
 
     D2D1_RECT_F rcVideo{ 0.f, 0.f, (float)m_VideoFrame.cx, (float)m_VideoFrame.cy };
@@ -325,8 +322,7 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
     Vert[3].uv = { x1, y1 };// 右下
     Vert[3].pos = ConstantVertices[3].pos;
 
-    memcpy(Mapped.pData, Vert, sizeof(Vert));
-    m_pContext->Unmap(m_Vb.Get(), 0);
+    m_Vb.UpdateDynamicBuffer(m_pContext.Get(), &Vert, sizeof(Vert));
 
     constexpr UINT Stride = sizeof(VERTEX);
     constexpr UINT Offset = 0;
@@ -341,7 +337,9 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
     m_pContext->PSSetShaderResources(0, 2, &m_SrvY);
 
     CONSTANT_BUFFER Cb{};
-    Cb.UvMax = { kScaleU, kScaleV - 1.f / (float)m_cyTexture };
+    Cb.UvMax = { kScaleU, kScaleV };
+    if (m_cyTexture != m_VideoFrame.cy)
+        Cb.UvMax.y -= (1.f / m_cyTexture);
     memcpy(&Cb.Yuv2Rgb, m_VideoFrame.Yuv2Rgb, sizeof(m_VideoFrame.Yuv2Rgb));
     Cb.Yuv2Rgb._41 = 0.f;
     Cb.Yuv2Rgb._42 = 0.f;
