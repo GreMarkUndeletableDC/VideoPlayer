@@ -1,7 +1,7 @@
 ﻿#pragma once
 #include "eck\PchInclude.h"
 #include "eck\SystemHelper.h"
-#include "eck\EzDx.h"
+#include "eck\D3DHelper.h"
 #include "eck\MathHelper.h"
 #include "eck\CDWriteFontFactory.h"
 #include "eck\CDuiTrackBar.h"
@@ -30,7 +30,6 @@ EXTERN_C_END
 
 #include <mmdeviceapi.h>
 #include <Audioclient.h>
-#include <d3d10.h>
 
 const inline IID IID_IAudioClient = __uuidof(IAudioClient);
 const inline IID IID_IAudioRenderClient = __uuidof(IAudioRenderClient);
@@ -43,8 +42,7 @@ using eck::SafeRelease;
 using eck::ComPtr;
 
 namespace Dui = eck::Dui;
-namespace EzDx = eck::EzDx;
-namespace Dx = DirectX;
+namespace Dx3D = eck::Dx3D;
 namespace Kw = eck::Kw;
 
 #include "CRingBuffer.h"

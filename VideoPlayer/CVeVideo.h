@@ -8,14 +8,14 @@ private:
     ComPtr<ID3D11DeviceContext> m_pContext{};
     ComPtr<ID3D11SamplerState> m_pSamplerY{};
     ComPtr<ID3D11SamplerState> m_pSamplerUv{};
-    EzDx::CShaderResourceView m_SrvY{};
-    EzDx::CShaderResourceView m_SrvUv{};
-    EzDx::CVSAndInputLayout m_VsAndIl{};
-    EzDx::CPixelShader m_Ps{};
-    EzDx::CBuffer m_Vb{};
-    EzDx::CBuffer m_Cb{};
-    EzDx::CTexture m_TextureY{};
-    EzDx::CTexture m_TextureUv{};
+    Dx3D::CShaderResourceView m_SrvY{};
+    Dx3D::CShaderResourceView m_SrvUv{};
+    Dx3D::CVertexShaderAndInputLayout m_VsAndIl{};
+    Dx3D::CPixelShader m_Ps{};
+    Dx3D::CBuffer m_Vb{};
+    Dx3D::CBuffer m_Cb{};
+    Dx3D::CTexture m_TextureY{};
+    Dx3D::CTexture m_TextureUv{};
     UINT m_cxTexture{}, m_cyTexture{};
 
     CPlayer::VideoFrame m_VideoFrame{};

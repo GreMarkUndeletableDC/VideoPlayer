@@ -1,7 +1,7 @@
 ﻿#include "pch.h"
 #include "CVeVideo.h"
 
-constexpr std::string_view VertexShader
+constexpr static std::string_view VertexShader
 { R"(
 struct VSOut
 {
@@ -18,7 +18,7 @@ VSOut main(float4 pos : POSITION, float2 tex : TEXCOORD0)
 }
 )" };
 
-constexpr std::string_view PixelShader
+constexpr static std::string_view PixelShader
 { R"(
 Texture2DArray<float> gTexY : register(t0);
 Texture2DArray<float2> gTexUV : register(t1);
@@ -53,8 +53,8 @@ float4 main(PSIn input) : SV_TARGET
 
 struct alignas(16) VERTEX
 {
-    Dx::XMFLOAT4 pos;
-    Dx::XMFLOAT2 uv;
+    DirectX::XMFLOAT4 pos;
+    DirectX::XMFLOAT2 uv;
 };
 
 constexpr static VERTEX ConstantVertices[]
@@ -67,9 +67,9 @@ constexpr static VERTEX ConstantVertices[]
 
 struct alignas(16) CONSTANT_BUFFER
 {
-    Dx::XMFLOAT2 UvMax;
-    Dx::XMFLOAT2 Unused;
-    Dx::XMFLOAT4X4 Yuv2Rgb;
+    DirectX::XMFLOAT2 UvMax;
+    DirectX::XMFLOAT2 Unused;
+    DirectX::XMFLOAT4X4 Yuv2Rgb;
 };
 
 HRESULT CVeVideo::DxInitialize() noexcept
@@ -86,7 +86,7 @@ HRESULT CVeVideo::DxInitialize() noexcept
     };
 
     ComPtr<ID3DBlob> pVsBlob, pPsBlob;
-    hr = EzDx::CompileShader(
+    hr = Dx3D::CompileShader(
         pVsBlob.Self(),
         VertexShader.data(), (int)VertexShader.size(),
         "main",
@@ -94,7 +94,7 @@ HRESULT CVeVideo::DxInitialize() noexcept
     if (FAILED(hr))
         return hr;
 
-    hr = EzDx::CompileShader(
+    hr = Dx3D::CompileShader(
         pPsBlob.Self(),
         PixelShader.data(), (int)PixelShader.size(),
         "main",
@@ -103,6 +103,7 @@ HRESULT CVeVideo::DxInitialize() noexcept
         return hr;
 
     hr = m_VsAndIl.Create(
+        nullptr,
         pVsBlob->GetBufferPointer(),
         pVsBlob->GetBufferSize(),
         Layout, ARRAYSIZE(Layout));
@@ -110,12 +111,14 @@ HRESULT CVeVideo::DxInitialize() noexcept
         return hr;
 
     hr = m_Ps.Create(
+        nullptr,
         pPsBlob->GetBufferPointer(),
         pPsBlob->GetBufferSize());
     if (FAILED(hr))
         return hr;
 
     hr = m_Vb.Create(
+        nullptr,
         sizeof(ConstantVertices),
         D3D11_BIND_VERTEX_BUFFER,
         D3D11_USAGE_DYNAMIC,
@@ -123,7 +126,7 @@ HRESULT CVeVideo::DxInitialize() noexcept
     if (FAILED(hr))
         return hr;
 
-    hr = m_Cb.CreateConstantBuffer(sizeof(CONSTANT_BUFFER));
+    hr = m_Cb.CreateConstantBuffer(nullptr, sizeof(CONSTANT_BUFFER));
     if (FAILED(hr))
         return hr;
 
@@ -187,12 +190,12 @@ HRESULT CVeVideo::DxHandleHardwareTexture(
     SrvDesc.Texture2DArray.ArraySize = 1;
 
     SrvDesc.Format = eFormatY;
-    hr = m_SrvY.Create(m_VideoFrame.pTexture.Get(), SrvDesc);
+    hr = m_SrvY.Create(nullptr, m_VideoFrame.pTexture.Get(), SrvDesc);
     if (FAILED(hr))
         return hr;
 
     SrvDesc.Format = eFormatUv;
-    hr = m_SrvUv.Create(m_VideoFrame.pTexture.Get(), SrvDesc);
+    hr = m_SrvUv.Create(nullptr, m_VideoFrame.pTexture.Get(), SrvDesc);
     if (FAILED(hr))
         return hr;
 
@@ -222,10 +225,10 @@ HRESULT CVeVideo::DxHandleSoftwareTexture(
     {
         if (m_eFormatY != eFormatY || !m_TextureY.Get())
         {
-            hr = m_TextureY.Create(cx, cy, eFormatY, D3D11_BIND_SHADER_RESOURCE);
+            hr = m_TextureY.Create(nullptr, cx, cy, eFormatY, D3D11_BIND_SHADER_RESOURCE);
             if (FAILED(hr))
                 return hr;
-            hr = m_SrvY.Create(m_TextureY.Get(), eFormatY);
+            hr = m_SrvY.Create(nullptr, m_TextureY.Get(), eFormatY);
             if (FAILED(hr))
                 return hr;
             m_eFormatY = eFormatY;
@@ -233,10 +236,11 @@ HRESULT CVeVideo::DxHandleSoftwareTexture(
 
         if (m_eFormatUv != eFormatUv || !m_TextureUv.Get())
         {
-            hr = m_TextureUv.Create(cxChroma, cyChroma, eFormatUv, D3D11_BIND_SHADER_RESOURCE);
+            hr = m_TextureUv.Create(nullptr,
+                cxChroma, cyChroma, eFormatUv, D3D11_BIND_SHADER_RESOURCE);
             if (FAILED(hr))
                 return hr;
-            hr = m_SrvUv.Create(m_TextureUv.Get(), eFormatUv);
+            hr = m_SrvUv.Create(nullptr, m_TextureUv.Get(), eFormatUv);
             if (FAILED(hr))
                 return hr;
             m_eFormatUv = eFormatUv;
@@ -273,9 +277,9 @@ HRESULT CVeVideo::DxHandleSoftwareTexture(
 
 void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget) noexcept
 {
-    EzDx::CRenderTargetView Rtv{};
-    Rtv.Create(pTarget);
-    m_pContext->OMSetRenderTargets(1, &Rtv.pRtv, nullptr);
+    Dx3D::CRenderTargetView Rtv{};
+    Rtv.Create(nullptr, pTarget);
+    m_pContext->OMSetRenderTargets(1, &Rtv, nullptr);
 
     // --
 
@@ -326,7 +330,7 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
 
     constexpr UINT Stride = sizeof(VERTEX);
     constexpr UINT Offset = 0;
-    m_pContext->IASetVertexBuffers(0, 1, &m_Vb.pBuffer, &Stride, &Offset);
+    m_pContext->IASetVertexBuffers(0, 1, &m_Vb, &Stride, &Offset);
 
     // --
 
@@ -334,7 +338,7 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
 
     m_pContext->PSSetShader(m_Ps.Get(), nullptr, 0);
     m_pContext->PSSetSamplers(0, 2, &m_pSamplerY);
-    m_pContext->PSSetShaderResources(0, 2, &m_SrvY.pSrv);
+    m_pContext->PSSetShaderResources(0, 2, &m_SrvY);
 
     CONSTANT_BUFFER Cb{};
     Cb.UvMax = { kScaleU, kScaleV - 1.f / (float)m_cyTexture };
@@ -345,7 +349,7 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
     Cb.Yuv2Rgb._44 = 1.f;
 
     m_Cb.UpdateDynamicBuffer(m_pContext.Get(), &Cb, sizeof(Cb));
-    m_pContext->PSSetConstantBuffers(0, 1, &m_Cb.pBuffer);
+    m_pContext->PSSetConstantBuffers(0, 1, &m_Cb);
 
     // --
 

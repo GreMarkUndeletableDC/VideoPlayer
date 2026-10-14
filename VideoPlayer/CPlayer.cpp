@@ -180,10 +180,6 @@ void CPlayer::ConvertSoftwareFrame(
 
 HRESULT CPlayer::Initialize() noexcept
 {
-    ComPtr<ID3D10Multithread> pMultiThread{};
-    if (SUCCEEDED(eck::g_pD3D11Device->QueryInterface(&pMultiThread)))
-        pMultiThread->SetMultithreadProtected(TRUE);
-
     m_Ffmpeg.InitializeDirect3D(eck::g_pD3D11Device);
     return S_OK;
 }

@@ -222,6 +222,7 @@ CFfmpeg::Result CFfmpeg::PrepareVideoCodec() noexcept
                     (AVD3D11VADeviceContext*)((AVHWDeviceContext*)pHwCtx->data)->hwctx;
                 pCtx->device = m_pD3DDevice.Get();
                 pCtx->device_context = nullptr;
+                m_pD3DDevice->CreateDeferredContext(0, &pCtx->device_context);
                 pCtx->lock = nullptr;
                 pCtx->unlock = nullptr;
                 pCtx->BindFlags |= D3D11_BIND_SHADER_RESOURCE;
