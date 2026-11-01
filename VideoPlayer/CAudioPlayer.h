@@ -21,5 +21,5 @@ public:
     double GetCurrentTime() noexcept;
     void Reset() noexcept;
     EckInlineNdCe UINT GetChannelCount() const noexcept { return m_cChannel; }
-    EckInlineNdCe BOOL HasClock() const noexcept { return !!m_pClock; }
+    EckInlineNdCe bool HasClock() const noexcept { return !!m_pClock; }
 };

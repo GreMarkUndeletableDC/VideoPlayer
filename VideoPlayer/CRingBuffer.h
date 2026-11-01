@@ -13,7 +13,7 @@ private:
     eck::CConditionVariable m_CvNotEmpty{};
     eck::CConditionVariable m_CvNotFull{};
 
-    BOOL m_bClosed{};
+    bool m_bClosed{};
 
     void InternalPush(T x) noexcept
     {
@@ -42,26 +42,26 @@ public:
     {
     }
 
-    BOOL Push(T x) noexcept
+    bool Push(T x) noexcept
     {
         m_Lock.EnterWrite();
 
         while (m_cSize == m_cCapacity && !m_bClosed)
-            m_CvNotFull.Sleep(m_Lock.GetPointer(), FALSE, nullptr);
+            m_CvNotFull.Sleep(m_Lock.GetPointer(), false, nullptr);
 
         if (m_bClosed)
         {
             m_Lock.LeaveWrite();
-            return FALSE;
+            return false;
         }
         InternalPush(std::move(x));
 
         m_Lock.LeaveWrite();
         m_CvNotEmpty.WakeAll();
-        return TRUE;
+        return true;
     }
 
-    BOOL TryPush(T x) noexcept
+    bool TryPush(T x) noexcept
     {
         m_Lock.EnterWrite();
         if (m_cSize < m_cCapacity && !m_bClosed)
@@ -69,30 +69,30 @@ public:
             InternalPush(std::move(x));
             m_Lock.LeaveWrite();
             m_CvNotEmpty.WakeAll();
-            return TRUE;
+            return true;
         }
         m_Lock.LeaveWrite();
-        return FALSE;
+        return false;
     }
 
-    BOOL Pop(T& x) noexcept
+    bool Pop(T& x) noexcept
     {
         m_Lock.EnterWrite();
 
         while (m_cSize == 0 && !m_bClosed)
-            m_CvNotEmpty.Sleep(m_Lock.GetPointer(), FALSE, nullptr);
+            m_CvNotEmpty.Sleep(m_Lock.GetPointer(), false, nullptr);
         if (m_bClosed)
         {
             m_Lock.LeaveWrite();
-            return FALSE;
+            return false;
         }
         InternalPop(x);
 
         m_Lock.LeaveWrite();
         m_CvNotFull.WakeAll();
-        return TRUE;
+        return true;
     }
-    BOOL TryPop(T& x) noexcept
+    bool TryPop(T& x) noexcept
     {
         m_Lock.EnterWrite();
         if (m_cSize > 0 && !m_bClosed)
@@ -100,10 +100,10 @@ public:
             InternalPop(x);
             m_Lock.LeaveWrite();
             m_CvNotFull.WakeAll();
-            return TRUE;
+            return true;
         }
         m_Lock.LeaveWrite();
-        return FALSE;
+        return false;
     }
 
     size_t Size() noexcept
@@ -128,7 +128,7 @@ public:
     {
         {
             eck::CSrwWriteGuard _{ m_Lock };
-            m_bClosed = TRUE;
+            m_bClosed = true;
             InternalClear();
         }
         m_CvNotFull.WakeAll();
@@ -138,6 +138,6 @@ public:
     void Open() noexcept
     {
         eck::CSrwWriteGuard _{ m_Lock };
-        m_bClosed = FALSE;
+        m_bClosed = false;
     }
 };

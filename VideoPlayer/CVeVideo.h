@@ -23,7 +23,7 @@ private:
     eck::CByteBuffer m_rbSoftware{};
 
     DXGI_FORMAT m_eFormatY{}, m_eFormatUv{};
-    BOOLEAN m_bHardwareDecode{};
+    bool m_bHardwareDecode{};
 
 
     HRESULT DxInitialize() noexcept;

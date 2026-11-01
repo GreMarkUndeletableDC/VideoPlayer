@@ -246,7 +246,6 @@ HRESULT CVeVideo::DxHandleSoftwareTexture(
             m_eFormatUv = eFormatUv;
         }
 
-        m_bHardwareDecode = FALSE;
         m_cxTexture = cx;
         m_cyTexture = cy;
     }
@@ -400,13 +399,13 @@ void CVeVideo::SetVideoFrame(
             m_VideoFrame.idxSubResource);
         m_TextureY.Clear();
         m_TextureUv.Clear();
-        m_bHardwareDecode = TRUE;
+        m_bHardwareDecode = true;
     }
     else
     {
         DxHandleSoftwareTexture(
             m_VideoFrame.cx, m_VideoFrame.cy,
             Context);
-        m_bHardwareDecode = FALSE;
+        m_bHardwareDecode = false;
     }
 }

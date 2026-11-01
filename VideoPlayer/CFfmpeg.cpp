@@ -4,10 +4,10 @@
 static void SleepDecodeThread() noexcept
 {
     LARGE_INTEGER li{ .QuadPart = -5'0000ll };
-    NtDelayExecution(FALSE, &li);
+    NtDelayExecution(false, &li);
 }
 
-BOOL CFfmpeg::WriteAudioFrame(
+bool CFfmpeg::WriteAudioFrame(
     _In_ const AVFrame* pFrame,
     UINT cChannel,
     _Out_writes_(cChannel* pFrame->nb_samples) float* pBuf) noexcept
@@ -90,9 +90,9 @@ BOOL CFfmpeg::WriteAudioFrame(
                 *pBuf++ = float(p[j][i]);
     }
     break;
-    default: return FALSE;
+    default: return false;
     }
-    return TRUE;
+    return true;
 }
 
 void CFfmpeg::ThreadVideoDecode() noexcept
@@ -186,13 +186,13 @@ void CFfmpeg::ThreadDemux() noexcept
         if (r < 0)
             break;
 
-        BOOL b;
+        bool b;
         if (pPacket->stream_index == m_idxStreamVideo)
             b = m_qVideo.Push(std::move(pPacket));
         else if (pPacket->stream_index == m_idxStreamAudio)
             b = m_qAudio.Push(std::move(pPacket));
         else
-            b = TRUE;
+            b = true;
 
         if (!b)
             break;
@@ -210,7 +210,7 @@ CFfmpeg::Result CFfmpeg::PrepareVideoCodec() noexcept
         return { ErrorType::VideoCodec, AVERROR(ENOMEM) };
     avcodec_parameters_to_context(m_pVideoCodecCtx.Get(), Stream.codecpar);
 
-    BOOL bHardware{};
+    bool bHardware{};
     if (m_pD3DDevice)
     {
         if (!m_pHwDeviceCtx)
@@ -234,7 +234,7 @@ CFfmpeg::Result CFfmpeg::PrepareVideoCodec() noexcept
             }
         }
 
-        bHardware = m_pHwDeviceCtx ? TRUE : FALSE;
+        bHardware = !!m_pHwDeviceCtx;
         if (bHardware)
         {
             m_pVideoCodecCtx->hw_device_ctx = av_buffer_ref(m_pHwDeviceCtx.Get());

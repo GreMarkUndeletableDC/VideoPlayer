@@ -21,7 +21,7 @@ public:
         eck::CByteBuffer* pSoftwareBuffer{};
         PCVOID pPlaneY, pPlaneUv;
         UINT cbStrideY, cbStrideUv;
-        BOOLEAN b10Bit;
+        bool b10Bit;
     };
 private:
     CFfmpeg m_Ffmpeg{};
@@ -48,7 +48,7 @@ public:
 
     auto& GetFfmpeg() noexcept { return m_Ffmpeg; }
 
-    BOOL PopVideoFrame(
+    bool PopVideoFrame(
         Eck_Out_buffer_ VideoFrame& Frame,
         _Inout_ VideoFrameContext& Context) noexcept;
 

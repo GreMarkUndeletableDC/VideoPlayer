@@ -17,7 +17,7 @@ LRESULT CWindowMain::OnCreate()
 
     eck::CDWriteFontFactory DwTfFactory{};
     DwTfFactory.NewFont(m_pTextFormat.Self(),
-        eck::Alignment::Near, eck::Alignment::Center, -1.f, 400, TRUE);;
+        eck::Alignment::Near, eck::Alignment::Center, -1.f, 400, true);;
 
     eck::PtcCurrent()->UpdateDefaultColor();
 
@@ -98,7 +98,7 @@ void CWindowMain::TlTick(int ms) noexcept
         {
             if (!m_Player.PopVideoFrame(m_PendingVideoFrame, m_VideoContext))
                 break;
-            m_bHasPendingVideoFrame = TRUE;
+            m_bHasPendingVideoFrame = true;
         }
 
         const auto t = m_Player.GetMasterClock();
@@ -108,13 +108,13 @@ void CWindowMain::TlTick(int ms) noexcept
         if (m_PendingVideoFrame.pts < t - 0.02)
         {
             m_PendingVideoFrame = {};
-            m_bHasPendingVideoFrame = FALSE;
+            m_bHasPendingVideoFrame = false;
             continue;
         }
 
         m_Video.SetVideoFrame(std::move(m_PendingVideoFrame), m_VideoContext);
         m_PendingVideoFrame = {};
-        m_bHasPendingVideoFrame = FALSE;
+        m_bHasPendingVideoFrame = false;
         RdInvalidate();
     }
 }

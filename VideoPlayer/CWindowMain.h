@@ -31,6 +31,6 @@ public:
     LRESULT OnElementNotify(Dui::CElement* pEle, Dui::ELENMHDR* pnm) noexcept override;
 
     void TlTick(int ms) noexcept override;
-    BOOL TlIsValid() noexcept override { return TRUE; }
+    bool TlIsValid() noexcept override { return true; }
     int TlGetCurrentInterval() const noexcept override { return m_msCurrentInterval; }
 };

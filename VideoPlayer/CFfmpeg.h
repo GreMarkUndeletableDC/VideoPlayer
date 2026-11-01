@@ -44,7 +44,7 @@ private:
     CRingBuffer<FfPtr<AVFrame>> m_qVideoDecoded{ 12 };
     CRingBuffer<FfPtr<AVFrame>> m_qAudioDecoded{ 64 };
 public:
-    static BOOL WriteAudioFrame(
+    static bool WriteAudioFrame(
         _In_ const AVFrame* pFrame,
         UINT32 cChannel,
         _Out_writes_(cChannel * pFrame->nb_samples) float* pBuf) noexcept;
@@ -67,19 +67,19 @@ public:
 
     void Stop() noexcept;
 
-    BOOL TryPopVideoDecoded(FfPtr<AVFrame>& pFrame) noexcept
+    bool TryPopVideoDecoded(FfPtr<AVFrame>& pFrame) noexcept
     {
         return m_qVideoDecoded.TryPop(pFrame);
     }
-    BOOL PopAudioDecoded(FfPtr<AVFrame>& pFrame) noexcept
+    bool PopAudioDecoded(FfPtr<AVFrame>& pFrame) noexcept
     {
         return m_qAudioDecoded.Pop(pFrame);
     }
 
     double GetPresentTimestamp(const AVFrame* pFrame) noexcept;
 
-    EckInlineNdCe BOOL HasVideoStream() const noexcept { return m_idxStreamVideo >= 0; }
-    EckInlineNdCe BOOL HasAudioStream() const noexcept { return m_idxStreamAudio >= 0; }
+    EckInlineNdCe bool HasVideoStream() const noexcept { return m_idxStreamVideo >= 0; }
+    EckInlineNdCe bool HasAudioStream() const noexcept { return m_idxStreamAudio >= 0; }
 
     void GetAudioFormat(_Out_ UINT& nSampleRate, _Out_ UINT& cChannel) noexcept;
 };

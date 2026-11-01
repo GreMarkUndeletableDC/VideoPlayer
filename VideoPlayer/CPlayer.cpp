@@ -45,7 +45,7 @@ void CPlayer::StopThreadAudio() noexcept
 
 static void CalculateYuvToRgbMatrix(
     _In_ const AVFrame* pFrame,
-    BOOL b10Bit,
+    bool b10Bit,
     _Out_ float pMatrix[3][4]) noexcept
 {
     const AVLumaCoefficients* pCoeffs =
@@ -109,7 +109,7 @@ void CPlayer::ConvertSoftwareFrame(
     Context.cbStrideY = 0;
     Context.pPlaneUv = nullptr;
     Context.cbStrideUv = 0;
-    Context.b10Bit = FALSE;
+    Context.b10Bit = false;
 
     const auto eFmtSource = (AVPixelFormat)pFrame->format;
     const auto* const pFmtDesc = av_pix_fmt_desc_get(eFmtSource);
@@ -213,19 +213,19 @@ int CPlayer::OpenFile(std::wstring_view svFile) noexcept
     return r.nCode;
 }
 
-BOOL CPlayer::PopVideoFrame(
+bool CPlayer::PopVideoFrame(
     Eck_Out_buffer_ VideoFrame& Frame,
     _Inout_ VideoFrameContext& Context) noexcept
 {
     FfPtr<AVFrame> pFrame{};
     if (!m_Ffmpeg.TryPopVideoDecoded(pFrame))
-        return FALSE;
+        return false;
 
     if (pFrame->format == AV_PIX_FMT_D3D11)
     {
         Frame.pTexture = (ID3D11Texture2D*)pFrame->data[0];
         Frame.idxSubResource = eck::PointerToDword<UINT>(pFrame->data[1]);
-        Context.b10Bit = FALSE;
+        Context.b10Bit = false;
         const auto* const pFrames =
             (const AVHWFramesContext*)pFrame->hw_frames_ctx->data;
         const auto* const pDesc = av_pix_fmt_desc_get(pFrames->sw_format);
@@ -244,7 +244,7 @@ BOOL CPlayer::PopVideoFrame(
     Frame.cx = (UINT)pFrame->width;
     Frame.cy = (UINT)pFrame->height;
     Frame.pFrame = std::move(pFrame);
-    return TRUE;
+    return true;
 }
 
 double CPlayer::GetMasterClock() noexcept
