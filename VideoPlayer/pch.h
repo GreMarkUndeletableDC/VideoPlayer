@@ -11,6 +11,7 @@
 #include "eck\CCriticalSection.h"
 #include "eck\CConditionVariable.h"
 #include "eck\Utility2.h"
+#include "eck/CScopeGuard.h"
 
 #include <deque>
 

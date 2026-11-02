@@ -12,7 +12,7 @@ private:
         else if constexpr (std::is_same_v<T, AVPacket>)
             av_packet_free(&m_p);
         else if constexpr (std::is_same_v<T, AVFormatContext>)
-            avformat_free_context(m_p);
+            avformat_close_input(&m_p);
         else if constexpr (std::is_same_v<T, AVCodecContext>)
             avcodec_free_context(&m_p);
         else
@@ -89,7 +89,7 @@ private:
         if (!m_p)
             return;
         if constexpr (std::is_same_v<T, AVBufferRef>)
-            av_buffer_ref(&m_p);
+            m_p = av_buffer_ref(m_p);
         else
             static_assert(!sizeof(T), "Unsupported type for FfRefPtr");
     }

@@ -193,6 +193,8 @@ int CPlayer::OpenFile(std::wstring_view svFile) noexcept
     StopThreadAudio();
 
     const auto r = m_Ffmpeg.OpenFile(rsPathU8.Data());
+    if (r.eType != CFfmpeg::ErrorType::Ok)
+        return r.nCode;
 
     if (m_Ffmpeg.HasAudioStream())
     {

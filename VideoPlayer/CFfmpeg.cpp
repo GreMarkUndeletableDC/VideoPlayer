@@ -308,6 +308,8 @@ void CFfmpeg::StopDecodeThread() noexcept
 
 CFfmpeg::Result CFfmpeg::OpenFile(_In_z_ PCSTR pszPathU8) noexcept
 {
+    eck::CScopeGuard ExitGuard{ [this]() noexcept { Stop(); } };
+
     m_pFmtCtx.Attach(avformat_alloc_context());
     if (!m_pFmtCtx)
         return { ErrorType::FormatContext, AVERROR(ENOMEM) };
@@ -336,9 +338,9 @@ CFfmpeg::Result CFfmpeg::OpenFile(_In_z_ PCSTR pszPathU8) noexcept
 
     if (m_idxStreamVideo >= 0)
     {
-        const auto r = PrepareVideoCodec();
-        if (r.eType != ErrorType::Ok)
-            return r;
+        const auto r1 = PrepareVideoCodec();
+        if (r1.eType != ErrorType::Ok)
+            return { r1.eType, r1.nCode };
         m_ThreadVideo.Attach(eck::CrtCreateThread(
             [](void* p) noexcept -> UINT
             {
@@ -348,9 +350,9 @@ CFfmpeg::Result CFfmpeg::OpenFile(_In_z_ PCSTR pszPathU8) noexcept
     }
     if (m_idxStreamAudio >= 0)
     {
-        const auto r = PrepareAudioCodec();
-        if (r.eType != ErrorType::Ok)
-            return r;
+        const auto r1 = PrepareAudioCodec();
+        if (r1.eType != ErrorType::Ok)
+            return { r1.eType, r1.nCode };
         m_ThreadAudio.Attach(eck::CrtCreateThread(
             [](void* p) noexcept -> UINT
             {
@@ -364,6 +366,7 @@ CFfmpeg::Result CFfmpeg::OpenFile(_In_z_ PCSTR pszPathU8) noexcept
             ((CFfmpeg*)p)->ThreadDemux();
             return 0;
         }, this));
+    ExitGuard.Cancel();
     return { ErrorType::Ok };
 }
 
@@ -374,6 +377,11 @@ void CFfmpeg::Stop() noexcept
     m_qAudio.Clear();
     m_qVideoDecoded.Clear();
     m_qAudioDecoded.Clear();
+    m_pVideoCodecCtx.Clear();
+    m_pAudioCodecCtx.Clear();
+    m_pFmtCtx.Clear();
+    m_idxStreamVideo = -1;
+    m_idxStreamAudio = -1;
 }
 
 double CFfmpeg::GetPresentTimestamp(const AVFrame* pFrame) noexcept
