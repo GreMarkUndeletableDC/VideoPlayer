@@ -238,6 +238,7 @@ CFfmpeg::Result CFfmpeg::PrepareVideoCodec() noexcept
         if (bHardware)
         {
             m_pVideoCodecCtx->hw_device_ctx = av_buffer_ref(m_pHwDeviceCtx.Get());
+            m_pVideoCodecCtx->extra_hw_frames = (int)QueueVideoSize;
             m_pVideoCodecCtx->get_format = [](AVCodecContext*, const AVPixelFormat* pPixFmts)
                 {
                     for (auto p = pPixFmts; *p != AV_PIX_FMT_NONE; ++p)
@@ -384,10 +385,15 @@ void CFfmpeg::Stop() noexcept
     m_idxStreamAudio = -1;
 }
 
-double CFfmpeg::GetPresentTimestamp(const AVFrame* pFrame) noexcept
+double CFfmpeg::GetPresentTimestamp(
+    _In_ const AVFrame* pFrame,
+    int idxStream) noexcept
 {
-    const auto TimeBase = m_pFmtCtx->streams[m_idxStreamVideo]->time_base;
-    return pFrame->best_effort_timestamp * av_q2d(TimeBase);
+    const auto& Stream = *m_pFmtCtx->streams[idxStream];
+    const auto d =
+        (pFrame->best_effort_timestamp - Stream.start_time) *
+        av_q2d(Stream.time_base);
+    return std::max(d, 0.);
 }
 
 void CFfmpeg::GetAudioFormat(_Out_ UINT& nSampleRate, _Out_ UINT& cChannel) noexcept

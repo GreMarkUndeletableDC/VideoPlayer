@@ -21,6 +21,10 @@ public:
         int nCode;
     };
 private:
+    static constexpr size_t QueuePacketSize = 64;
+    static constexpr size_t QueueVideoSize = 10;
+    static constexpr size_t QueueAudioSize = 256;
+
     FfPtr<AVFormatContext> m_pFmtCtx{};
     int m_idxStreamVideo{ -1 };
     int m_idxStreamAudio{ -1 };
@@ -39,15 +43,15 @@ private:
     std::atomic_bool m_bStopDecode{};
     eck::CCriticalSection m_Lock{};
 
-    CRingBuffer<FfPtr<AVPacket>> m_qVideo{ 64 };
-    CRingBuffer<FfPtr<AVPacket>> m_qAudio{ 64 };
-    CRingBuffer<FfPtr<AVFrame>> m_qVideoDecoded{ 12 };
-    CRingBuffer<FfPtr<AVFrame>> m_qAudioDecoded{ 64 };
+    CRingBuffer<FfPtr<AVPacket>> m_qVideo{ QueuePacketSize };
+    CRingBuffer<FfPtr<AVPacket>> m_qAudio{ QueuePacketSize };
+    CRingBuffer<FfPtr<AVFrame>> m_qVideoDecoded{ QueueVideoSize };
+    CRingBuffer<FfPtr<AVFrame>> m_qAudioDecoded{ QueueAudioSize };
 public:
     static bool WriteAudioFrame(
         _In_ const AVFrame* pFrame,
         UINT32 cChannel,
-        _Out_writes_(cChannel * pFrame->nb_samples) float* pBuf) noexcept;
+        _Out_writes_(cChannel* pFrame->nb_samples) float* pBuf) noexcept;
 
     void ThreadVideoDecode() noexcept;
     void ThreadAudioDecode() noexcept;
@@ -76,10 +80,12 @@ public:
         return m_qAudioDecoded.Pop(pFrame);
     }
 
-    double GetPresentTimestamp(const AVFrame* pFrame) noexcept;
+    double GetPresentTimestamp(
+        _In_ const AVFrame* pFrame,
+        int idxStream) noexcept;
 
-    EckInlineNdCe bool HasVideoStream() const noexcept { return m_idxStreamVideo >= 0; }
-    EckInlineNdCe bool HasAudioStream() const noexcept { return m_idxStreamAudio >= 0; }
+    EckInlineNdCe int GetVideoStream() const noexcept { return m_idxStreamVideo; }
+    EckInlineNdCe int GetAudioStream() const noexcept { return m_idxStreamAudio; }
 
     void GetAudioFormat(_Out_ UINT& nSampleRate, _Out_ UINT& cChannel) noexcept;
 };

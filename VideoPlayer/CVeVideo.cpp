@@ -219,36 +219,32 @@ HRESULT CVeVideo::DxHandleSoftwareTexture(
     const auto cxChroma = (cx + 1) / 2;
     const auto cyChroma = (cy + 1) / 2;
 
-    if (m_bHardwareDecode ||
-        m_cxTexture != cx ||
-        m_cyTexture != cy)
+    const auto bShouldCreate =
+        (m_bHardwareDecode || m_cxTexture != cx || m_cyTexture != cy);
+
+    if (bShouldCreate || m_eFormatY != eFormatY || !m_TextureY.Get())
     {
-        if (m_eFormatY != eFormatY || !m_TextureY.Get())
-        {
-            hr = m_TextureY.Create(nullptr, cx, cy, eFormatY, D3D11_BIND_SHADER_RESOURCE);
-            if (FAILED(hr))
-                return hr;
-            hr = m_SrvY.Create(nullptr, m_TextureY.Get(), eFormatY);
-            if (FAILED(hr))
-                return hr;
-            m_eFormatY = eFormatY;
-        }
-
-        if (m_eFormatUv != eFormatUv || !m_TextureUv.Get())
-        {
-            hr = m_TextureUv.Create(nullptr,
-                cxChroma, cyChroma, eFormatUv, D3D11_BIND_SHADER_RESOURCE);
-            if (FAILED(hr))
-                return hr;
-            hr = m_SrvUv.Create(nullptr, m_TextureUv.Get(), eFormatUv);
-            if (FAILED(hr))
-                return hr;
-            m_eFormatUv = eFormatUv;
-        }
-
-        m_cxTexture = cx;
-        m_cyTexture = cy;
+        hr = m_TextureY.Create(nullptr, cx, cy, eFormatY, D3D11_BIND_SHADER_RESOURCE);
+        if (FAILED(hr))
+            return hr;
+        hr = m_SrvY.Create(nullptr, m_TextureY.Get(), eFormatY);
+        if (FAILED(hr))
+            return hr;
+        m_eFormatY = eFormatY;
     }
+    if (bShouldCreate || m_eFormatUv != eFormatUv || !m_TextureUv.Get())
+    {
+        hr = m_TextureUv.Create(nullptr,
+            cxChroma, cyChroma, eFormatUv, D3D11_BIND_SHADER_RESOURCE);
+        if (FAILED(hr))
+            return hr;
+        hr = m_SrvUv.Create(nullptr, m_TextureUv.Get(), eFormatUv);
+        if (FAILED(hr))
+            return hr;
+        m_eFormatUv = eFormatUv;
+    }
+    m_cxTexture = cx;
+    m_cyTexture = cy;
 
     ID3D11ShaderResourceView* const NullSrv[2]{};
     m_pContext->PSSetShaderResources(0, 2, NullSrv);
@@ -276,6 +272,10 @@ HRESULT CVeVideo::DxHandleSoftwareTexture(
 
 void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget) noexcept
 {
+    if (!m_VideoFrame.cx || !m_VideoFrame.cy ||
+        !m_cxTexture || !m_cyTexture || !pTarget)
+        return;
+
     Dx3D::CRenderTargetView Rtv{};
     Rtv.Create(nullptr, pTarget);
     m_pContext->OMSetRenderTargets(1, &Rtv, nullptr);
@@ -408,4 +408,17 @@ void CVeVideo::SetVideoFrame(
             Context);
         m_bHardwareDecode = false;
     }
+}
+
+void CVeVideo::ResetVideo() noexcept
+{
+    m_SrvY.Clear();
+    m_SrvUv.Clear();
+    m_TextureY.Clear();
+    m_TextureUv.Clear();
+    m_VideoFrame = {};
+    m_cxTexture = 0;
+    m_cyTexture = 0;
+    m_eFormatY = DXGI_FORMAT_UNKNOWN;
+    m_eFormatUv = DXGI_FORMAT_UNKNOWN;
 }

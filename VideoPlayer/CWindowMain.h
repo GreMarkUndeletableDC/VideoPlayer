@@ -10,7 +10,7 @@ private:
     ComPtr<IDWriteTextFormat> m_pTextFormat{};
 
     CPlayer m_Player{};
-    CPlayer::VideoFrame m_PendingVideoFrame{};
+    CPlayer::VideoFrame m_VideoFrame{};
     CPlayer::VideoFrameContext m_VideoContext{};
 
     CVeVideo m_Video{};
@@ -23,6 +23,8 @@ private:
 
 
     LRESULT OnCreate();
+
+    void OpenFile(PCWSTR pszFile) noexcept;
 public:
     LRESULT OnMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept override;
 

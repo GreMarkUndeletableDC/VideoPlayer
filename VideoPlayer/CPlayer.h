@@ -29,6 +29,11 @@ private:
     eck::CWaitableObject m_ThreadAudio{};
     std::atomic_bool m_bStopAudio{};
 
+    LARGE_INTEGER m_QpcFreq{};
+    LARGE_INTEGER m_QpcDisplay{};
+    double m_ptsLastVideo{};
+    bool m_bLastVideoPtsValid{};
+
     SwsContext* m_pSws{};
 
     void ThreadAudio() noexcept;
@@ -46,11 +51,12 @@ public:
 
     int OpenFile(std::wstring_view svFile) noexcept;
 
-    auto& GetFfmpeg() noexcept { return m_Ffmpeg; }
-
     bool PopVideoFrame(
         Eck_Out_buffer_ VideoFrame& Frame,
         _Inout_ VideoFrameContext& Context) noexcept;
 
     double GetMasterClock() noexcept;
+
+    void SetCurrentVideoFramePresentTimestamp(double pts) noexcept;
+    EckInlineNdCe bool HasDisplayedFrame() const noexcept { return m_bLastVideoPtsValid; }
 };

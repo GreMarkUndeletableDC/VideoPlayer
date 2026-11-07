@@ -3,6 +3,9 @@
 
 HRESULT CAudioPlayer::Initialize(UINT uSampleRate, UINT cChannel) noexcept
 {
+    Shutdown();
+    m_bExit.store(false, std::memory_order_release);
+
     HRESULT hr;
     hr = m_pDeviceEnumerator.CreateInstance(CLSID_MMDeviceEnumerator);
     if (FAILED(hr))
@@ -22,6 +25,7 @@ HRESULT CAudioPlayer::Initialize(UINT uSampleRate, UINT cChannel) noexcept
         return hr;
 
     m_cChannel = cChannel;
+    m_nSampleRate = uSampleRate;
 
     WAVEFORMATEX* pwfx;
     hr = m_pClient->GetMixFormat(&pwfx);
@@ -46,11 +50,9 @@ HRESULT CAudioPlayer::Initialize(UINT uSampleRate, UINT cChannel) noexcept
         0,
         pwfx,
         nullptr);
+    CoTaskMemFree(pwfx);
     if (FAILED(hr))
-    {
-        CoTaskMemFree(pwfx);
         return hr;
-    }
 
     m_Event.NoSignal();
     hr = m_pClient->SetEventHandle(m_Event.Get());
@@ -67,18 +69,30 @@ HRESULT CAudioPlayer::Initialize(UINT uSampleRate, UINT cChannel) noexcept
     if (FAILED(hr))
         return hr;
 
-    hr = m_pClient->GetService(
-        IID_IAudioClock,
-        (void**)m_pClock.AtClear());
+    hr = m_pClient->Start();
     if (FAILED(hr))
-    {
-        CoTaskMemFree(pwfx);
         return hr;
-    }
-    hr = m_pClock->GetFrequency(&m_ullFrequency);
+    return S_OK;
+}
 
-    CoTaskMemFree(pwfx);
-    return hr;
+void CAudioPlayer::Shutdown() noexcept
+{
+    m_bExit.store(true, std::memory_order_release);
+    m_Event.Signal();
+    if (m_pClient)
+    {
+        m_pClient->Stop();
+        m_pClient->Reset();
+        m_pClient.Clear();
+    }
+    m_pRenderClient.Clear();
+    m_pDevice.Clear();
+    m_pDeviceEnumerator.Clear();
+    m_cAudioBuffer = 0;
+    m_cChannel = 0;
+    m_nSampleRate = 0;
+    m_ptsLast.store(0., std::memory_order_relaxed);
+    m_bLastPtsValid.store(false, std::memory_order_release);
 }
 
 std::span<float> CAudioPlayer::GetBuffer(UINT cRequested) noexcept
@@ -92,6 +106,8 @@ std::span<float> CAudioPlayer::GetBuffer(UINT cRequested) noexcept
     EckLoop()
     {
         eck::WaitObject(m_Event);
+        if (m_bExit.load(std::memory_order_acquire))
+            return {};
 
         UINT32 cPadding{};
         if (FAILED(m_pClient->GetCurrentPadding(&cPadding)))
@@ -111,20 +127,20 @@ void CAudioPlayer::ReleaseBuffer(UINT cWritten) noexcept
     m_pRenderClient->ReleaseBuffer(cWritten, 0);
 }
 
-double CAudioPlayer::GetCurrentTime() noexcept
+void CAudioPlayer::SetCurrentPresentTimestamp(double pts) noexcept
 {
-    if (!m_pClock || !m_ullFrequency)
-        return 0.;
-    UINT64 ullPosition;
-    if (FAILED(m_pClock->GetPosition(&ullPosition, nullptr)))
-        return 0.;
-    return (double)ullPosition / (double)m_ullFrequency;
+    m_ptsLast.store(pts, std::memory_order_relaxed);
+    m_bLastPtsValid.store(true, std::memory_order_release);
 }
 
-void CAudioPlayer::Reset() noexcept
+double CAudioPlayer::GetCurrentTime() noexcept
 {
-    m_Event.NoSignal();
-    m_pClient->Stop();
-    m_pClient->Reset();
-    m_pClient->Start();
+    if (!m_bLastPtsValid.load(std::memory_order_acquire))
+        return -1.;
+
+    const auto pts = m_ptsLast.load(std::memory_order_relaxed);
+    UINT32 cPadding{};
+    if (FAILED(m_pClient->GetCurrentPadding(&cPadding)))
+        return pts;
+    return pts - ((double)cPadding / m_nSampleRate);
 }

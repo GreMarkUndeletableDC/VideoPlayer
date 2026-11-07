@@ -29,7 +29,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
         EckDbgPrintFormatMessage(uErr);
         eck::MessageDialog(
             eck::Format(L"Init failed!\r\nInitStatus = %d\r\nError code = %08X",
-            (int)r, uErr).Data(),
+                (int)r, uErr).Data(),
             L"Error",
             MB_ICONERROR);
         return 0;
@@ -41,13 +41,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     const auto pWnd = new CWindowMain{};
     const auto hMon = eck::GetOwnerMonitor(nullptr);
     const auto iDpi = eck::GetMonitorDpi(hMon);
-    auto size = SIZE{ 640, 480 };
-    eck::DpiScale(size, iDpi);
-    const auto pt = eck::CalculateCenterWindowPosition(nullptr, size.cx, size.cy, false);
-    pWnd->SetPresentMode(Dui::PresentMode::DCompositionSurface);
+    auto Size = SIZE{ 640, 480 };
+    eck::DpiScale(Size, iDpi);
+    const auto pt = eck::CalculateCenterWindowPosition(nullptr, Size.cx, Size.cy, false);
+    pWnd->RdSetPresentMode(Dui::PresentMode::FlipSwapChain);
+    pWnd->RdSetFlipSwapChainBufferCount(3);
     pWnd->SetUserDpi(iDpi);
-    pWnd->Create(L"示例Win32程序", WS_OVERLAPPEDWINDOW, 0,
-        pt.x, pt.y, size.cx, size.cy, nullptr, 0);
+    pWnd->Create(
+        L"示例Win32程序",
+        WS_OVERLAPPEDWINDOW,
+        WS_EX_ACCEPTFILES,
+        pt.x, pt.y, Size.cx, Size.cy, nullptr, 0);
     pWnd->Show(SW_SHOW);
 
     MSG msg;

@@ -55,6 +55,22 @@ LRESULT CWindowMain::OnMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept
     }
     break;
 
+    case WM_DROPFILES:
+    {
+        const auto hDrop = (HDROP)wParam;
+        const auto cFile = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
+        if (cFile)
+        {
+            const auto cchBuf = DragQueryFileW(hDrop, 0, nullptr, 0);
+            eck::CStringW rs{};
+            rs.ReSize(cchBuf);
+            DragQueryFileW(hDrop, 0, rs.Data(), cchBuf + 1);
+            OpenFile(rs.Data());
+        }
+        DragFinish(hDrop);
+    }
+    return 0;
+
     case WM_CREATE:
     {
         const auto lResult = __super::OnMessage(uMsg, wParam, lParam);
@@ -90,30 +106,48 @@ LRESULT CWindowMain::OnElementNotify(Dui::CElement* pEle, Dui::ELENMHDR* pnm) no
     return 0;
 }
 
+void CWindowMain::OpenFile(PCWSTR pszFile) noexcept
+{
+    m_VideoFrame = {};
+    m_bHasPendingVideoFrame = false;
+    m_VideoContext.pPlaneY = nullptr;
+    m_VideoContext.pPlaneUv = nullptr;
+    m_VideoContext.cbStrideY = 0;
+    m_VideoContext.cbStrideUv = 0;
+    m_VideoContext.b10Bit = false;
+
+    m_Video.ResetVideo();
+    m_Player.OpenFile(pszFile);
+    RdInvalidate();
+}
+
 void CWindowMain::TlTick(int ms) noexcept
 {
     EckLoop()
     {
         if (!m_bHasPendingVideoFrame)
         {
-            if (!m_Player.PopVideoFrame(m_PendingVideoFrame, m_VideoContext))
+            if (!m_Player.PopVideoFrame(m_VideoFrame, m_VideoContext))
                 break;
             m_bHasPendingVideoFrame = true;
         }
 
-        const auto t = m_Player.GetMasterClock();
-
-        if (m_PendingVideoFrame.pts > t + 0.02)
-            break;
-        if (m_PendingVideoFrame.pts < t - 0.02)
+        if (m_Player.HasDisplayedFrame())
         {
-            m_PendingVideoFrame = {};
-            m_bHasPendingVideoFrame = false;
-            continue;
+            const auto t = m_Player.GetMasterClock();
+            if (m_VideoFrame.pts > t + 0.02)
+                break;
+            if (m_VideoFrame.pts < t - 0.02)
+            {
+                m_VideoFrame = {};
+                m_bHasPendingVideoFrame = false;
+                continue;
+            }
         }
 
-        m_Video.SetVideoFrame(std::move(m_PendingVideoFrame), m_VideoContext);
-        m_PendingVideoFrame = {};
+        m_Player.SetCurrentVideoFramePresentTimestamp(m_VideoFrame.pts);
+        m_Video.SetVideoFrame(std::move(m_VideoFrame), m_VideoContext);
+        m_VideoFrame = {};
         m_bHasPendingVideoFrame = false;
         RdInvalidate();
     }

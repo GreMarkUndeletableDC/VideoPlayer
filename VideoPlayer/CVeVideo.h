@@ -42,5 +42,7 @@ public:
         CPlayer::VideoFrame Frame,
         const CPlayer::VideoFrameContext& Context) noexcept;
 
+    void ResetVideo() noexcept;
+
     EckInlineNdCe auto& GetSoftwareByteBuffer() noexcept { return m_rbSoftware; }
 };

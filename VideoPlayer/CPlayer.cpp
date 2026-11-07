@@ -11,7 +11,6 @@ CPlayer::~CPlayer() noexcept
 
 void CPlayer::ThreadAudio() noexcept
 {
-    m_AudioPlayer.Reset();
     while (!m_bStopAudio.load(std::memory_order_acquire))
     {
         FfPtr<AVFrame> pFrame{};
@@ -27,15 +26,26 @@ void CPlayer::ThreadAudio() noexcept
         if (spBuffer.empty())
             break;
 
+        const auto cWritten = UINT(spBuffer.size() / cChannel);
+        if (cWritten < (UINT)cSample)
+        {
+            m_AudioPlayer.ReleaseBuffer(0);
+            continue;
+        }
         if (!CFfmpeg::WriteAudioFrame(pFrame.Get(), cChannel, spBuffer.data()))
             RtlZeroMemory(spBuffer.data(), spBuffer.size() * sizeof(float));
-        m_AudioPlayer.ReleaseBuffer(cSample);
+        m_AudioPlayer.ReleaseBuffer(cWritten);
+
+        m_AudioPlayer.SetCurrentPresentTimestamp(
+            m_Ffmpeg.GetPresentTimestamp(pFrame.Get(), m_Ffmpeg.GetAudioStream()) +
+            ((double)cWritten / m_AudioPlayer.GetSampleRate()));
     }
 }
 
 void CPlayer::StopThreadAudio() noexcept
 {
     m_bStopAudio.store(true, std::memory_order_release);
+    m_AudioPlayer.Shutdown();
     if (m_ThreadAudio.Get())
     {
         eck::WaitObject(m_ThreadAudio);
@@ -180,6 +190,8 @@ void CPlayer::ConvertSoftwareFrame(
 
 HRESULT CPlayer::Initialize() noexcept
 {
+    LARGE_INTEGER Dummy;
+    NtQueryPerformanceCounter(&Dummy, &m_QpcFreq);
     m_Ffmpeg.InitializeDirect3D(eck::g_pD3D11Device);
     return S_OK;
 }
@@ -191,12 +203,16 @@ int CPlayer::OpenFile(std::wstring_view svFile) noexcept
 
     m_Ffmpeg.Stop();
     StopThreadAudio();
+    m_AudioPlayer.Shutdown();
+
+    m_bLastVideoPtsValid = false;
+    m_ptsLastVideo = 0.;
 
     const auto r = m_Ffmpeg.OpenFile(rsPathU8.Data());
     if (r.eType != CFfmpeg::ErrorType::Ok)
         return r.nCode;
 
-    if (m_Ffmpeg.HasAudioStream())
+    if (m_Ffmpeg.GetAudioStream() >= 0)
     {
         UINT nSampleRate, cChannel;
         m_Ffmpeg.GetAudioFormat(nSampleRate, cChannel);
@@ -242,16 +258,30 @@ bool CPlayer::PopVideoFrame(
     }
     CalculateYuvToRgbMatrix(pFrame.Get(), Context.b10Bit, Frame.Yuv2Rgb);
 
-    Frame.pts = m_Ffmpeg.GetPresentTimestamp(pFrame.Get());
+    Frame.pts = m_Ffmpeg.GetPresentTimestamp(pFrame.Get(), m_Ffmpeg.GetVideoStream());
     Frame.cx = (UINT)pFrame->width;
     Frame.cy = (UINT)pFrame->height;
     Frame.pFrame = std::move(pFrame);
     return true;
 }
 
+void CPlayer::SetCurrentVideoFramePresentTimestamp(double pts) noexcept
+{
+    m_ptsLastVideo = pts;
+    NtQueryPerformanceCounter(&m_QpcDisplay, nullptr);
+    m_bLastVideoPtsValid = true;
+}
+
 double CPlayer::GetMasterClock() noexcept
 {
-    if (m_AudioPlayer.HasClock())
-        return m_AudioPlayer.GetCurrentTime();
-    return 0.;
+    const auto pts = m_AudioPlayer.GetCurrentTime();
+    if (pts >= 0.)
+        return pts;
+
+    if (!m_bLastVideoPtsValid)
+        return 0.;
+    LARGE_INTEGER Qpc;
+    NtQueryPerformanceCounter(&Qpc, nullptr);
+    return m_ptsLastVideo +
+        double(Qpc.QuadPart - m_QpcDisplay.QuadPart) / m_QpcFreq.QuadPart;
 }
