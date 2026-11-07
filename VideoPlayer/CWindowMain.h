@@ -11,7 +11,6 @@ private:
 
     CPlayer m_Player{};
     CPlayer::VideoFrame m_VideoFrame{};
-    CPlayer::VideoFrameContext m_VideoContext{};
 
     CVeVideo m_Video{};
     Dui::CTrackBar m_TB{};

@@ -87,5 +87,7 @@ public:
     EckInlineNdCe int GetVideoStream() const noexcept { return m_idxStreamVideo; }
     EckInlineNdCe int GetAudioStream() const noexcept { return m_idxStreamAudio; }
 
-    void GetAudioFormat(_Out_ UINT& nSampleRate, _Out_ UINT& cChannel) noexcept;
+    void GetAudioFormat(
+        _Out_ UINT& nSampleRate,
+        _Out_ UINT& cChannel) noexcept;
 };

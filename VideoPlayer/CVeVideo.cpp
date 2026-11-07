@@ -69,7 +69,7 @@ struct alignas(16) CONSTANT_BUFFER
 {
     DirectX::XMFLOAT2 UvMax;
     DirectX::XMFLOAT2 Unused;
-    DirectX::XMFLOAT4X4 Yuv2Rgb;
+    DirectX::XMFLOAT4X4 YuvToRgb;
 };
 
 HRESULT CVeVideo::DxInitialize() noexcept
@@ -159,13 +159,11 @@ HRESULT CVeVideo::DxCreateSampler() noexcept
     return S_OK;
 }
 
-HRESULT CVeVideo::DxHandleHardwareTexture(
-    _In_ ID3D11Texture2D* pTexture,
-    UINT idxSubResource) noexcept
+HRESULT CVeVideo::DxHandleHardwareTexture() noexcept
 {
     HRESULT hr;
     D3D11_TEXTURE2D_DESC Desc{};
-    pTexture->GetDesc(&Desc);
+    m_Frame.pTexture->GetDesc(&Desc);
 
     DXGI_FORMAT eFormatY = DXGI_FORMAT_UNKNOWN;
     DXGI_FORMAT eFormatUv = DXGI_FORMAT_UNKNOWN;
@@ -186,16 +184,16 @@ HRESULT CVeVideo::DxHandleHardwareTexture(
     D3D11_SHADER_RESOURCE_VIEW_DESC SrvDesc{};
     SrvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
     SrvDesc.Texture2DArray.MipLevels = 1;
-    SrvDesc.Texture2DArray.FirstArraySlice = m_VideoFrame.idxSubResource;
+    SrvDesc.Texture2DArray.FirstArraySlice = m_Frame.idxSubResource;
     SrvDesc.Texture2DArray.ArraySize = 1;
 
     SrvDesc.Format = eFormatY;
-    hr = m_SrvY.Create(nullptr, m_VideoFrame.pTexture.Get(), SrvDesc);
+    hr = m_SrvY.Create(nullptr, m_Frame.pTexture.Get(), SrvDesc);
     if (FAILED(hr))
         return hr;
 
     SrvDesc.Format = eFormatUv;
-    hr = m_SrvUv.Create(nullptr, m_VideoFrame.pTexture.Get(), SrvDesc);
+    hr = m_SrvUv.Create(nullptr, m_Frame.pTexture.Get(), SrvDesc);
     if (FAILED(hr))
         return hr;
 
@@ -206,25 +204,23 @@ HRESULT CVeVideo::DxHandleHardwareTexture(
     return S_OK;
 }
 
-HRESULT CVeVideo::DxHandleSoftwareTexture(
-    UINT cx, UINT cy,
-    const CPlayer::VideoFrameContext& Context) noexcept
+HRESULT CVeVideo::DxHandleSoftwareTexture() noexcept
 {
-    if (!Context.pPlaneY || !Context.pPlaneUv)
+    if (!m_Frame.pPlaneY || !m_Frame.pPlaneUv)
         return E_POINTER;
 
     HRESULT hr;
-    const auto eFormatY = Context.b10Bit ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
-    const auto eFormatUv = Context.b10Bit ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
-    const auto cxChroma = (cx + 1) / 2;
-    const auto cyChroma = (cy + 1) / 2;
+    const auto eFormatY = m_Frame.b10Bit ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
+    const auto eFormatUv = m_Frame.b10Bit ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
+    const auto cxChroma = (m_Frame.cx + 1) / 2;
+    const auto cyChroma = (m_Frame.cy + 1) / 2;
 
     const auto bShouldCreate =
-        (m_bHardwareDecode || m_cxTexture != cx || m_cyTexture != cy);
+        (m_bHardwareDecode || m_cxTexture != m_Frame.cx || m_cyTexture != m_Frame.cy);
 
     if (bShouldCreate || m_eFormatY != eFormatY || !m_TextureY.Get())
     {
-        hr = m_TextureY.Create(nullptr, cx, cy, eFormatY, D3D11_BIND_SHADER_RESOURCE);
+        hr = m_TextureY.Create(nullptr, m_Frame.cx, m_Frame.cy, eFormatY, D3D11_BIND_SHADER_RESOURCE);
         if (FAILED(hr))
             return hr;
         hr = m_SrvY.Create(nullptr, m_TextureY.Get(), eFormatY);
@@ -243,19 +239,19 @@ HRESULT CVeVideo::DxHandleSoftwareTexture(
             return hr;
         m_eFormatUv = eFormatUv;
     }
-    m_cxTexture = cx;
-    m_cyTexture = cy;
+    m_cxTexture = m_Frame.cx;
+    m_cyTexture = m_Frame.cy;
 
     ID3D11ShaderResourceView* const NullSrv[2]{};
     m_pContext->PSSetShaderResources(0, 2, NullSrv);
 
-    const D3D11_BOX BoxY{ 0, 0, 0, cx, cy, 1 };
+    const D3D11_BOX BoxY{ 0, 0, 0, m_Frame.cx, m_Frame.cy, 1 };
     m_pContext->UpdateSubresource(
         m_TextureY.Get(),
         0,
         &BoxY,
-        Context.pPlaneY,
-        Context.cbStrideY,
+        m_Frame.pPlaneY,
+        m_Frame.cbStrideY,
         0);
 
     const D3D11_BOX BoxUv{ 0, 0, 0, cxChroma, cyChroma, 1 };
@@ -263,8 +259,8 @@ HRESULT CVeVideo::DxHandleSoftwareTexture(
         m_TextureUv.Get(),
         0,
         &BoxUv,
-        Context.pPlaneUv,
-        Context.cbStrideUv,
+        m_Frame.pPlaneUv,
+        m_Frame.cbStrideUv,
         0);
     m_pContext->Flush();
     return S_OK;
@@ -272,7 +268,7 @@ HRESULT CVeVideo::DxHandleSoftwareTexture(
 
 void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget) noexcept
 {
-    if (!m_VideoFrame.cx || !m_VideoFrame.cy ||
+    if (!m_Frame.cx || !m_Frame.cy ||
         !m_cxTexture || !m_cyTexture || !pTarget)
         return;
 
@@ -300,11 +296,11 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
 
     VERTEX Vert[4];
 
-    D2D1_RECT_F rcVideo{ 0.f, 0.f, (float)m_VideoFrame.cx, (float)m_VideoFrame.cy };
+    D2D1_RECT_F rcVideo{ 0.f, 0.f, (float)m_Frame.cx, (float)m_Frame.cy };
     eck::AdjustRectToFitAnother(rcVideo, GetRectInClientD2D());
 
-    const auto kScaleU = (float)m_VideoFrame.cx / (float)m_cxTexture;
-    const auto kScaleV = (float)m_VideoFrame.cy / (float)m_cyTexture;
+    const auto kScaleU = (float)m_Frame.cx / (float)m_cxTexture;
+    const auto kScaleV = (float)m_Frame.cy / (float)m_cyTexture;
 
     const auto cxVideo = rcVideo.right - rcVideo.left;
     const auto cyVideo = rcVideo.bottom - rcVideo.top;
@@ -337,13 +333,13 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
 
     CONSTANT_BUFFER Cb{};
     Cb.UvMax = { kScaleU, kScaleV };
-    if (m_cyTexture != m_VideoFrame.cy)
+    if (m_cyTexture != m_Frame.cy)
         Cb.UvMax.y -= (1.f / m_cyTexture);
-    memcpy(&Cb.Yuv2Rgb, m_VideoFrame.Yuv2Rgb, sizeof(m_VideoFrame.Yuv2Rgb));
-    Cb.Yuv2Rgb._41 = 0.f;
-    Cb.Yuv2Rgb._42 = 0.f;
-    Cb.Yuv2Rgb._43 = 0.f;
-    Cb.Yuv2Rgb._44 = 1.f;
+    memcpy(&Cb.YuvToRgb, m_Frame.YuvToRgb, sizeof(m_Frame.YuvToRgb));
+    Cb.YuvToRgb._41 = 0.f;
+    Cb.YuvToRgb._42 = 0.f;
+    Cb.YuvToRgb._43 = 0.f;
+    Cb.YuvToRgb._44 = 1.f;
 
     m_Cb.UpdateDynamicBuffer(m_pContext.Get(), &Cb, sizeof(Cb));
     m_pContext->PSSetConstantBuffers(0, 1, &m_Cb);
@@ -387,25 +383,19 @@ LRESULT CVeVideo::OnEvent(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept
     return __super::OnEvent(uMsg, wParam, lParam);
 }
 
-void CVeVideo::SetVideoFrame(
-    CPlayer::VideoFrame Frame,
-    const CPlayer::VideoFrameContext& Context) noexcept
+void CVeVideo::SetVideoFrame(CPlayer::VideoFrame Frame) noexcept
 {
-    m_VideoFrame = std::move(Frame);
-    if (m_VideoFrame.pTexture)
+    m_Frame = std::move(Frame);
+    if (m_Frame.pTexture)
     {
-        DxHandleHardwareTexture(
-            m_VideoFrame.pTexture.Get(),
-            m_VideoFrame.idxSubResource);
+        DxHandleHardwareTexture();
         m_TextureY.Clear();
         m_TextureUv.Clear();
         m_bHardwareDecode = true;
     }
     else
     {
-        DxHandleSoftwareTexture(
-            m_VideoFrame.cx, m_VideoFrame.cy,
-            Context);
+        DxHandleSoftwareTexture();
         m_bHardwareDecode = false;
     }
 }
@@ -416,7 +406,7 @@ void CVeVideo::ResetVideo() noexcept
     m_SrvUv.Clear();
     m_TextureY.Clear();
     m_TextureUv.Clear();
-    m_VideoFrame = {};
+    m_Frame = {};
     m_cxTexture = 0;
     m_cyTexture = 0;
     m_eFormatY = DXGI_FORMAT_UNKNOWN;

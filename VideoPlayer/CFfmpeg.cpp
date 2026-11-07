@@ -1,12 +1,6 @@
 ﻿#include "pch.h"
 #include "CFfmpeg.h"
 
-static void SleepDecodeThread() noexcept
-{
-    LARGE_INTEGER li{ .QuadPart = -5'0000ll };
-    NtDelayExecution(false, &li);
-}
-
 bool CFfmpeg::WriteAudioFrame(
     _In_ const AVFrame* pFrame,
     UINT cChannel,
@@ -109,10 +103,7 @@ void CFfmpeg::ThreadVideoDecode() noexcept
 
         r = avcodec_send_packet(m_pVideoCodecCtx.Get(), pPacket.Get());
         if (r == AVERROR(ENOMEM))
-        {
             pPacket.Clear();
-            SleepDecodeThread();
-        }
         else
         {
             if (r && r != AVERROR(EAGAIN))
@@ -128,11 +119,6 @@ void CFfmpeg::ThreadVideoDecode() noexcept
         if (!pFrame)
             break;
         r = avcodec_receive_frame(m_pVideoCodecCtx.Get(), pFrame.Get());
-        if (r == AVERROR(ENOMEM))
-        {
-            SleepDecodeThread();
-            continue;
-        }
         if (r)
             continue;
 
@@ -396,9 +382,10 @@ double CFfmpeg::GetPresentTimestamp(
     return std::max(d, 0.);
 }
 
-void CFfmpeg::GetAudioFormat(_Out_ UINT& nSampleRate, _Out_ UINT& cChannel) noexcept
+void CFfmpeg::GetAudioFormat(
+    _Out_ UINT& nSampleRate,
+    _Out_ UINT& cChannel) noexcept
 {
-    const auto* const pCodecPar = m_pFmtCtx->streams[m_idxStreamAudio]->codecpar;
     nSampleRate = m_pAudioCodecCtx->sample_rate;
     cChannel = m_pAudioCodecCtx->ch_layout.nb_channels;
 }

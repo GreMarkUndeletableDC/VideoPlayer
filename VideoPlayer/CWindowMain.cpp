@@ -26,8 +26,6 @@ LRESULT CWindowMain::OnCreate()
     m_Video.Create({}, Dui::DES_VISIBLE, 0,
         0, 0, 0, 0, nullptr, this);
 
-    m_VideoContext.pSoftwareBuffer = &m_Video.GetSoftwareByteBuffer();
-
     m_TB.Create({}, Dui::DES_VISIBLE | Dui::DES_NOTIFY_WND, 0,
         0, 0, 0, 0, nullptr, this);
     m_TB.SetTrackSize(CyTrackSize);
@@ -110,11 +108,6 @@ void CWindowMain::OpenFile(PCWSTR pszFile) noexcept
 {
     m_VideoFrame = {};
     m_bHasPendingVideoFrame = false;
-    m_VideoContext.pPlaneY = nullptr;
-    m_VideoContext.pPlaneUv = nullptr;
-    m_VideoContext.cbStrideY = 0;
-    m_VideoContext.cbStrideUv = 0;
-    m_VideoContext.b10Bit = false;
 
     m_Video.ResetVideo();
     m_Player.OpenFile(pszFile);
@@ -127,7 +120,11 @@ void CWindowMain::TlTick(int ms) noexcept
     {
         if (!m_bHasPendingVideoFrame)
         {
-            if (!m_Player.PopVideoFrame(m_VideoFrame, m_VideoContext))
+            CPlayer::VideoFrameContext Ctx
+            {
+                .pSoftwareBuffer = &m_Video.GetSoftwareByteBuffer(),
+            };
+            if (!m_Player.PopVideoFrame(m_VideoFrame, Ctx))
                 break;
             m_bHasPendingVideoFrame = true;
         }
@@ -146,7 +143,7 @@ void CWindowMain::TlTick(int ms) noexcept
         }
 
         m_Player.SetCurrentVideoFramePresentTimestamp(m_VideoFrame.pts);
-        m_Video.SetVideoFrame(std::move(m_VideoFrame), m_VideoContext);
+        m_Video.SetVideoFrame(std::move(m_VideoFrame));
         m_VideoFrame = {};
         m_bHasPendingVideoFrame = false;
         RdInvalidate();

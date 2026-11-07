@@ -14,14 +14,15 @@ public:
         double pts{};
         UINT cx{};
         UINT cy{};
-        float Yuv2Rgb[3][4]{};
+        float YuvToRgb[3][4]{};
+
+        PCVOID pPlaneY, pPlaneUv;
+        UINT cbStrideY, cbStrideUv;
+        bool b10Bit;
     };
     struct VideoFrameContext
     {
         eck::CByteBuffer* pSoftwareBuffer{};
-        PCVOID pPlaneY, pPlaneUv;
-        UINT cbStrideY, cbStrideUv;
-        bool b10Bit;
     };
 private:
     CFfmpeg m_Ffmpeg{};
@@ -42,7 +43,8 @@ private:
 
     void ConvertSoftwareFrame(
         _In_ const AVFrame* pFrame,
-        _Inout_ VideoFrameContext& Context) noexcept;
+        _Inout_ VideoFrame& Frame,
+        const VideoFrameContext& Context) noexcept;
 public:
     CPlayer() = default;
     ~CPlayer() noexcept;

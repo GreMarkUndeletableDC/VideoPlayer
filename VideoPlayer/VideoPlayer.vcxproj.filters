@@ -60,11 +60,11 @@
     <ClInclude Include="FfPtr.h">
       <Filter>工具</Filter>
     </ClInclude>
-    <ClInclude Include="CRingBuffer.h">
-      <Filter>播放器</Filter>
-    </ClInclude>
     <ClInclude Include="CVeVideo.h">
       <Filter>元素</Filter>
+    </ClInclude>
+    <ClInclude Include="CRingBuffer.h">
+      <Filter>工具</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

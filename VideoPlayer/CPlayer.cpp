@@ -112,14 +112,15 @@ static void CalculateYuvToRgbMatrix(
 
 void CPlayer::ConvertSoftwareFrame(
     _In_ const AVFrame* pFrame,
-    _Inout_ VideoFrameContext& Context) noexcept
+    _Inout_ VideoFrame& Frame,
+    const VideoFrameContext& Context) noexcept
 {
     int r;
-    Context.pPlaneY = nullptr;
-    Context.cbStrideY = 0;
-    Context.pPlaneUv = nullptr;
-    Context.cbStrideUv = 0;
-    Context.b10Bit = false;
+    Frame.pPlaneY = nullptr;
+    Frame.cbStrideY = 0;
+    Frame.pPlaneUv = nullptr;
+    Frame.cbStrideUv = 0;
+    Frame.b10Bit = false;
 
     const auto eFmtSource = (AVPixelFormat)pFrame->format;
     const auto* const pFmtDesc = av_pix_fmt_desc_get(eFmtSource);
@@ -130,10 +131,10 @@ void CPlayer::ConvertSoftwareFrame(
 
     if (eFmtSource == eFmtDest)
     {
-        Context.pPlaneY = pFrame->data[0];
-        Context.cbStrideY = (UINT)pFrame->linesize[0];
-        Context.pPlaneUv = pFrame->data[1];
-        Context.cbStrideUv = (UINT)pFrame->linesize[1];
+        Frame.pPlaneY = pFrame->data[0];
+        Frame.cbStrideY = (UINT)pFrame->linesize[0];
+        Frame.pPlaneUv = pFrame->data[1];
+        Frame.cbStrideUv = (UINT)pFrame->linesize[1];
     }
     else
     {
@@ -180,12 +181,12 @@ void CPlayer::ConvertSoftwareFrame(
         if (r < 0)
             return;
 
-        Context.pPlaneY = pDstData[0];
-        Context.cbStrideY = (UINT)cbDstStride[0];
-        Context.pPlaneUv = pDstData[1];
-        Context.cbStrideUv = (UINT)cbDstStride[1];
+        Frame.pPlaneY = pDstData[0];
+        Frame.cbStrideY = (UINT)cbDstStride[0];
+        Frame.pPlaneUv = pDstData[1];
+        Frame.cbStrideUv = (UINT)cbDstStride[1];
     }
-    Context.b10Bit = (eFmtDest == AV_PIX_FMT_P010LE);
+    Frame.b10Bit = (eFmtDest == AV_PIX_FMT_P010LE);
 }
 
 HRESULT CPlayer::Initialize() noexcept
@@ -243,20 +244,20 @@ bool CPlayer::PopVideoFrame(
     {
         Frame.pTexture = (ID3D11Texture2D*)pFrame->data[0];
         Frame.idxSubResource = eck::PointerToDword<UINT>(pFrame->data[1]);
-        Context.b10Bit = false;
+        Frame.b10Bit = false;
         const auto* const pFrames =
             (const AVHWFramesContext*)pFrame->hw_frames_ctx->data;
         const auto* const pDesc = av_pix_fmt_desc_get(pFrames->sw_format);
         if (pDesc)
-            Context.b10Bit = (pDesc->comp[0].depth > 8);
+            Frame.b10Bit = (pDesc->comp[0].depth > 8);
     }
     else
     {
         Frame.pTexture.Clear();
         Frame.idxSubResource = 0;
-        ConvertSoftwareFrame(pFrame.Get(), Context);
+        ConvertSoftwareFrame(pFrame.Get(), Frame, Context);
     }
-    CalculateYuvToRgbMatrix(pFrame.Get(), Context.b10Bit, Frame.Yuv2Rgb);
+    CalculateYuvToRgbMatrix(pFrame.Get(), Frame.b10Bit, Frame.YuvToRgb);
 
     Frame.pts = m_Ffmpeg.GetPresentTimestamp(pFrame.Get(), m_Ffmpeg.GetVideoStream());
     Frame.cx = (UINT)pFrame->width;

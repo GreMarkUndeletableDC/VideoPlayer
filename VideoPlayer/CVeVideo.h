@@ -18,7 +18,7 @@ private:
     Dx3D::CTexture m_TextureUv{};
     UINT m_cxTexture{}, m_cyTexture{};
 
-    CPlayer::VideoFrame m_VideoFrame{};
+    CPlayer::VideoFrame m_Frame{};
 
     eck::CByteBuffer m_rbSoftware{};
 
@@ -28,19 +28,13 @@ private:
 
     HRESULT DxInitialize() noexcept;
     HRESULT DxCreateSampler() noexcept;
-    HRESULT DxHandleHardwareTexture(
-        _In_ ID3D11Texture2D* pTexture,
-        UINT idxSubResource) noexcept;
-    HRESULT DxHandleSoftwareTexture(
-        UINT cx, UINT cy,
-        const CPlayer::VideoFrameContext& Context) noexcept;
+    HRESULT DxHandleHardwareTexture() noexcept;
+    HRESULT DxHandleSoftwareTexture() noexcept;
     void DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget) noexcept;
 public:
     LRESULT OnEvent(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept override;
 
-    void SetVideoFrame(
-        CPlayer::VideoFrame Frame,
-        const CPlayer::VideoFrameContext& Context) noexcept;
+    void SetVideoFrame(CPlayer::VideoFrame Frame) noexcept;
 
     void ResetVideo() noexcept;
 
