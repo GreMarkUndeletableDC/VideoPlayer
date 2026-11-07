@@ -23,7 +23,7 @@ LRESULT CWindowMain::OnCreate()
 
     m_Player.Initialize();
 
-    m_Video.Create({}, Dui::DES_VISIBLE, 0,
+    m_Video.Create({}, Dui::DES_VISIBLE | Dui::DES_NO_CLIP, 0,
         0, 0, 0, 0, nullptr, this);
 
     m_TB.Create({}, Dui::DES_VISIBLE | Dui::DES_NOTIFY_WND, 0,

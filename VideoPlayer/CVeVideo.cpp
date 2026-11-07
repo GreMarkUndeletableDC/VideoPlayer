@@ -27,9 +27,7 @@ SamplerState gSamplerUV : register(s1);
 
 cbuffer Cb : register(b0)
 {
-    float2 gUvMax;
-    float2 gUnused;
-    row_major matrix gYuv2Rgb;
+    matrix gYuvToRgb;
 };
 
 struct PSIn
@@ -40,13 +38,9 @@ struct PSIn
 
 float4 main(PSIn input) : SV_TARGET
 {
-    if (input.uvPos.x < 0.f || input.uvPos.y < 0.f ||
-        input.uvPos.x > gUvMax.x || input.uvPos.y > gUvMax.y)
-        return float4(0.f, 0.f, 0.f, 1.f);
-
     const float y = gTexY.Sample(gSamplerY, float3(input.uvPos, 0));
     const float2 uv = gTexUV.Sample(gSamplerUV, float3(input.uvPos, 0));
-    const float3 rgb = mul(gYuv2Rgb, float4(y, uv, 1.f)).rgb;
+    const float3 rgb = mul(gYuvToRgb, float4(y, uv, 1.f)).rgb;
     return float4(saturate(rgb), 1);
 }
 )" };
@@ -67,9 +61,7 @@ constexpr static VERTEX ConstantVertices[]
 
 struct alignas(16) CONSTANT_BUFFER
 {
-    DirectX::XMFLOAT2 UvMax;
-    DirectX::XMFLOAT2 Unused;
-    DirectX::XMFLOAT4X4 YuvToRgb;
+    DirectX::XMFLOAT4X4A YuvToRgb;
 };
 
 HRESULT CVeVideo::DxInitialize() noexcept
@@ -77,11 +69,11 @@ HRESULT CVeVideo::DxInitialize() noexcept
     HRESULT hr;
 
     m_pDevice = eck::g_pD3D11Device;
-    m_pDevice->GetImmediateContext(&m_pContext);
+    m_pDevice->GetImmediateContext(m_pContext.AtClear());
 
     constexpr D3D11_INPUT_ELEMENT_DESC Layout[]
     {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT,       },
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0  },
         { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0, 16 },
     };
 
@@ -134,6 +126,19 @@ HRESULT CVeVideo::DxInitialize() noexcept
     if (FAILED(hr))
         return hr;
     return S_OK;
+}
+
+void CVeVideo::DxUninitialize() noexcept
+{
+    m_pContext.Clear();
+    m_pDevice.Clear();
+    m_pSamplerY.Clear();
+    m_pSamplerUv.Clear();
+    m_VsAndIl.Clear();
+    m_Ps.Clear();
+    m_Vb.Clear();
+    m_Cb.Clear();
+    ResetVideo();
 }
 
 HRESULT CVeVideo::DxCreateSampler() noexcept
@@ -266,6 +271,34 @@ HRESULT CVeVideo::DxHandleSoftwareTexture() noexcept
     return S_OK;
 }
 
+CVeVideo::PIPELINE_STATE CVeVideo::DxSaveState() noexcept
+{
+    PIPELINE_STATE State{};
+    m_pContext->OMGetRenderTargets(1, &State.pRtv, &State.pDsv);
+    m_pContext->IAGetInputLayout(&State.pIl);
+    m_pContext->VSGetShader(&State.pVs, nullptr, nullptr);
+    m_pContext->PSGetShader(&State.pPs, nullptr, nullptr);
+    m_pContext->PSGetSamplers(0, 1, &State.pSampler0);
+    m_pContext->PSGetSamplers(1, 1, &State.pSampler1);
+    m_pContext->PSGetConstantBuffers(0, 1, &State.pCb);
+    m_pContext->PSGetShaderResources(0, 1, &State.pSrv0);
+    m_pContext->PSGetShaderResources(1, 1, &State.pSrv1);
+    return State;
+}
+
+void CVeVideo::DxRestoreState(const PIPELINE_STATE& State)
+{
+    m_pContext->OMSetRenderTargets(1, &State.pRtv, State.pDsv.Get());
+    m_pContext->IASetInputLayout(State.pIl.Get());
+    m_pContext->VSSetShader(State.pVs.Get(), nullptr, 0);
+    m_pContext->PSSetShader(State.pPs.Get(), nullptr, 0);
+    m_pContext->PSSetSamplers(0, 1, &State.pSampler0);
+    m_pContext->PSSetSamplers(1, 1, &State.pSampler1);
+    m_pContext->PSSetConstantBuffers(0, 1, &State.pCb);
+    m_pContext->PSSetShaderResources(0, 1, &State.pSrv0);
+    m_pContext->PSSetShaderResources(1, 1, &State.pSrv1);
+}
+
 void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget) noexcept
 {
     if (!m_Frame.cx || !m_Frame.cy ||
@@ -275,6 +308,9 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
     Dx3D::CRenderTargetView Rtv{};
     Rtv.Create(nullptr, pTarget);
     m_pContext->OMSetRenderTargets(1, &Rtv, nullptr);
+
+    D2D1_RECT_F rcVideo{ 0.f, 0.f, (float)m_Frame.cx, (float)m_Frame.cy };
+    eck::AdjustRectToFitAnother(rcVideo, GetRectInClientD2D());
 
     // --
 
@@ -289,15 +325,19 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
     };
     m_pContext->RSSetViewports(1, &Viewport);
 
+    D3D11_RECT rcClip;
+    rcClip.left = LogicalToPixel(rcVideo.left + ps.ox);
+    rcClip.top = LogicalToPixel(rcVideo.top + ps.oy);
+    rcClip.right = rcClip.left + LogicalToPixel(rcVideo.right - rcVideo.left);
+    rcClip.bottom = rcClip.top + LogicalToPixel(rcVideo.bottom - rcVideo.top);
+    m_pContext->RSSetScissorRects(1, &rcClip);
+
     // --
 
     m_pContext->IASetInputLayout(m_VsAndIl.GetInputLayout());
     m_pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
     VERTEX Vert[4];
-
-    D2D1_RECT_F rcVideo{ 0.f, 0.f, (float)m_Frame.cx, (float)m_Frame.cy };
-    eck::AdjustRectToFitAnother(rcVideo, GetRectInClientD2D());
 
     const auto kScaleU = (float)m_Frame.cx / (float)m_cxTexture;
     const auto kScaleV = (float)m_Frame.cy / (float)m_cyTexture;
@@ -332,14 +372,15 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
     m_pContext->PSSetShaderResources(0, 2, &m_SrvY);
 
     CONSTANT_BUFFER Cb{};
-    Cb.UvMax = { kScaleU, kScaleV };
-    if (m_cyTexture != m_Frame.cy)
-        Cb.UvMax.y -= (1.f / m_cyTexture);
-    memcpy(&Cb.YuvToRgb, m_Frame.YuvToRgb, sizeof(m_Frame.YuvToRgb));
-    Cb.YuvToRgb._41 = 0.f;
-    Cb.YuvToRgb._42 = 0.f;
-    Cb.YuvToRgb._43 = 0.f;
-    Cb.YuvToRgb._44 = 1.f;
+    DirectX::XMFLOAT4X4A Mat;
+    memcpy(&Mat, m_Frame.YuvToRgb, sizeof(m_Frame.YuvToRgb));
+    Mat._41 = 0.f;
+    Mat._42 = 0.f;
+    Mat._43 = 0.f;
+    Mat._44 = 1.f;
+    DirectX::XMStoreFloat4x4A(
+        &Cb.YuvToRgb,
+        DirectX::XMMatrixTranspose(DirectX::XMLoadFloat4x4A(&Mat)));
 
     m_Cb.UpdateDynamicBuffer(m_pContext.Get(), &Cb, sizeof(Cb));
     m_pContext->PSSetConstantBuffers(0, 1, &m_Cb);
@@ -370,7 +411,9 @@ LRESULT CVeVideo::OnEvent(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept
         pBitmap->GetSurface(&pSurface);
         pSurface.As(pTargetTexture);
 
+        const auto State = DxSaveState();
         DxRenderVideo(ps, pTargetTexture.Get());
+        DxRestoreState(State);
 
         EndPaint(ps);
     }
@@ -378,6 +421,9 @@ LRESULT CVeVideo::OnEvent(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept
 
     case WM_CREATE:
         DxInitialize();
+        break;
+    case WM_DESTROY:
+        DxUninitialize();
         break;
     }
     return __super::OnEvent(uMsg, wParam, lParam);
