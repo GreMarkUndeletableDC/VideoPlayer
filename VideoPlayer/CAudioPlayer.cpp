@@ -1,7 +1,7 @@
 ﻿#include "pch.h"
 #include "CAudioPlayer.h"
 
-HRESULT CAudioPlayer::Initialize(UINT uSampleRate, UINT cChannel) noexcept
+HRESULT CAudioPlayer::Initialize(UINT nSampleRate, UINT cChannel) noexcept
 {
     Shutdown();
     m_bExit.store(false, std::memory_order_release);
@@ -12,7 +12,7 @@ HRESULT CAudioPlayer::Initialize(UINT uSampleRate, UINT cChannel) noexcept
         return hr;
 
     hr = m_pDeviceEnumerator->GetDefaultAudioEndpoint(
-        eRender, eMultimedia, m_pDevice.AtClear());
+        eRender, eMultimedia, &m_pDevice);
     if (FAILED(hr))
         return hr;
 
@@ -20,19 +20,19 @@ HRESULT CAudioPlayer::Initialize(UINT uSampleRate, UINT cChannel) noexcept
         IID_IAudioClient,
         CLSCTX_ALL,
         nullptr,
-        (void**)m_pClient.AtClear());
+        (void**)&m_pClient);
     if (FAILED(hr))
         return hr;
 
     m_cChannel = cChannel;
-    m_nSampleRate = uSampleRate;
+    m_nSampleRate = nSampleRate;
 
     WAVEFORMATEX* pwfx;
     hr = m_pClient->GetMixFormat(&pwfx);
     if (FAILED(hr))
         return hr;
 
-    pwfx->nSamplesPerSec = uSampleRate;
+    pwfx->nSamplesPerSec = nSampleRate;
     pwfx->nChannels = cChannel;
     pwfx->nBlockAlign = (WORD)(pwfx->nChannels * pwfx->wBitsPerSample / 8);
     pwfx->nAvgBytesPerSec = pwfx->nSamplesPerSec * pwfx->nBlockAlign;
@@ -65,7 +65,7 @@ HRESULT CAudioPlayer::Initialize(UINT uSampleRate, UINT cChannel) noexcept
 
     hr = m_pClient->GetService(
         IID_IAudioRenderClient,
-        (void**)m_pRenderClient.AtClear());
+        (void**)&m_pRenderClient);
     if (FAILED(hr))
         return hr;
 
@@ -95,6 +95,20 @@ void CAudioPlayer::Shutdown() noexcept
     m_bLastPtsValid.store(false, std::memory_order_release);
 }
 
+void CAudioPlayer::Seek(double pts) noexcept
+{
+    m_bSeek.store(true, std::memory_order_release);
+    SetCurrentPresentTimestamp(pts);
+    m_Event.Signal();
+}
+
+void CAudioPlayer::Reset() noexcept
+{
+    m_pClient->Stop();
+    m_pClient->Reset();
+    m_pClient->Start();
+}
+
 std::span<float> CAudioPlayer::GetBuffer(UINT cRequested) noexcept
 {
     if (!m_pClient || !m_pRenderClient)
@@ -106,7 +120,8 @@ std::span<float> CAudioPlayer::GetBuffer(UINT cRequested) noexcept
     EckLoop()
     {
         eck::WaitObject(m_Event);
-        if (m_bExit.load(std::memory_order_acquire))
+        if (m_bExit.load(std::memory_order_acquire) ||
+            m_bSeek.load(std::memory_order_acquire))
             return {};
 
         UINT32 cPadding{};
@@ -137,8 +152,9 @@ double CAudioPlayer::GetCurrentTime() noexcept
 {
     if (!m_bLastPtsValid.load(std::memory_order_acquire))
         return -1.;
-
     const auto pts = m_ptsLast.load(std::memory_order_relaxed);
+    if (m_bSeek.load(std::memory_order_acquire))
+        return pts;
     UINT32 cPadding{};
     if (FAILED(m_pClient->GetCurrentPadding(&cPadding)))
         return pts;

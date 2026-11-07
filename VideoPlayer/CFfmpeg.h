@@ -40,7 +40,9 @@ private:
     eck::CWaitableObject m_ThreadAudio{};
     eck::CWaitableObject m_ThreadDemux{};
 
-    std::atomic_bool m_bStopDecode{};
+    std::atomic<bool> m_bStopDecode{};
+    std::atomic<USHORT> m_nSeekSerial{};
+    std::atomic<double> m_ptsSeek{};// 负值表示无效
     eck::CCriticalSection m_Lock{};
 
     CRingBuffer<FfPtr<AVPacket>> m_qVideo{ QueuePacketSize };
@@ -52,7 +54,7 @@ public:
         _In_ const AVFrame* pFrame,
         UINT32 cChannel,
         _Out_writes_(cChannel* pFrame->nb_samples) float* pBuf) noexcept;
-
+private:
     void ThreadVideoDecode() noexcept;
     void ThreadAudioDecode() noexcept;
     void ThreadDemux() noexcept;
@@ -90,4 +92,13 @@ public:
     void GetAudioFormat(
         _Out_ UINT& nSampleRate,
         _Out_ UINT& cChannel) noexcept;
+
+    USHORT GetSeekSerial() const noexcept
+    {
+        return m_nSeekSerial.load(std::memory_order_acquire);
+    }
+
+    void Seek(double s) noexcept;
+
+    double GetDuration() noexcept;
 };

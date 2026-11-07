@@ -24,6 +24,7 @@ private:
     LRESULT OnCreate();
 
     void OpenFile(PCWSTR pszFile) noexcept;
+    void Seek(double s) noexcept;
 public:
     LRESULT OnMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept override;
 

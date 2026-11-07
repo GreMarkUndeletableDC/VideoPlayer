@@ -11,25 +11,52 @@ CPlayer::~CPlayer() noexcept
 
 void CPlayer::ThreadAudio() noexcept
 {
+    FfPtr<AVFrame> pFrame{};
     while (!m_bStopAudio.load(std::memory_order_acquire))
     {
-        FfPtr<AVFrame> pFrame{};
-        if (!m_Ffmpeg.PopAudioDecoded(pFrame))
-            break;
+        if (!pFrame)
+        {
+            if (!m_Ffmpeg.PopAudioDecoded(pFrame))
+                break;
+        }
+        if (eck::PointerToDword<USHORT>(pFrame->opaque) != m_Ffmpeg.GetSeekSerial())
+        {
+            pFrame.Clear();
+            continue;
+        }
+
+        if (m_AudioPlayer.IsSeekRequested())
+        {
+            m_AudioPlayer.Reset();
+            m_AudioPlayer.CompleteSeek();
+            if (eck::PointerToDword<USHORT>(pFrame->opaque) != m_Ffmpeg.GetSeekSerial())
+            {
+                pFrame.Clear();
+                continue;
+            }
+        }
 
         const auto cChannel = m_AudioPlayer.GetChannelCount();
         const auto cSample = pFrame->nb_samples;
         if (cSample <= 0)
+        {
+            pFrame.Clear();
             continue;
+        }
 
         const auto spBuffer = m_AudioPlayer.GetBuffer(cSample);
         if (spBuffer.empty())
+        {
+            if (m_AudioPlayer.IsSeekRequested())
+                continue;
             break;
+        }
 
         const auto cWritten = UINT(spBuffer.size() / cChannel);
         if (cWritten < (UINT)cSample)
         {
             m_AudioPlayer.ReleaseBuffer(0);
+            pFrame.Clear();
             continue;
         }
         if (!CFfmpeg::WriteAudioFrame(pFrame.Get(), cChannel, spBuffer.data()))
@@ -39,6 +66,8 @@ void CPlayer::ThreadAudio() noexcept
         m_AudioPlayer.SetCurrentPresentTimestamp(
             m_Ffmpeg.GetPresentTimestamp(pFrame.Get(), m_Ffmpeg.GetAudioStream()) +
             ((double)cWritten / m_AudioPlayer.GetSampleRate()));
+
+        pFrame.Clear();
     }
 }
 
@@ -232,12 +261,18 @@ int CPlayer::OpenFile(std::wstring_view svFile) noexcept
     return r.nCode;
 }
 
-bool CPlayer::PopVideoFrame(
+bool CPlayer::VideoPopFrame(
     Eck_Out_buffer_ VideoFrame& Frame,
     _Inout_ VideoFrameContext& Context) noexcept
 {
     FfPtr<AVFrame> pFrame{};
-    if (!m_Ffmpeg.TryPopVideoDecoded(pFrame))
+    while (m_Ffmpeg.TryPopVideoDecoded(pFrame))
+    {
+        if (eck::PointerToDword<USHORT>(pFrame->opaque) == m_Ffmpeg.GetSeekSerial())
+            break;
+        pFrame.Clear();
+    }
+    if (!pFrame)
         return false;
 
     if (pFrame->format == AV_PIX_FMT_D3D11)
@@ -266,19 +301,25 @@ bool CPlayer::PopVideoFrame(
     return true;
 }
 
-void CPlayer::SetCurrentVideoFramePresentTimestamp(double pts) noexcept
+void CPlayer::VideoSetCurrentPresentTimestamp(double pts) noexcept
 {
-    m_ptsLastVideo = pts;
+    m_ptsLastVideo.store(pts, std::memory_order_relaxed);
     NtQueryPerformanceCounter(&m_QpcDisplay, nullptr);
-    m_bLastVideoPtsValid = true;
+    m_bLastVideoPtsValid.store(true, std::memory_order_release);
 }
 
-double CPlayer::GetMasterClock() noexcept
+void CPlayer::Seek(double s) noexcept
+{
+    m_Ffmpeg.Seek(s);
+    m_AudioPlayer.Seek(s);
+    VideoSetCurrentPresentTimestamp(s);
+}
+
+double CPlayer::VideoGetMasterClock() noexcept
 {
     const auto pts = m_AudioPlayer.GetCurrentTime();
     if (pts >= 0.)
         return pts;
-
     if (!m_bLastVideoPtsValid)
         return 0.;
     LARGE_INTEGER Qpc;

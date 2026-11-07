@@ -48,7 +48,7 @@ private:
     HRESULT DxHandleSoftwareTexture() noexcept;
 
     PIPELINE_STATE DxSaveState() noexcept;
-    void DxRestoreState(const PIPELINE_STATE& State);
+    void DxRestoreState(const PIPELINE_STATE& State) noexcept;
 
     void DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget) noexcept;
 public:

@@ -21,9 +21,9 @@ VSOut main(float4 pos : POSITION, float2 tex : TEXCOORD0)
 constexpr static std::string_view PixelShader
 { R"(
 Texture2DArray<float> gTexY : register(t0);
-Texture2DArray<float2> gTexUV : register(t1);
+Texture2DArray<float2> gTexUv : register(t1);
 SamplerState gSamplerY : register(s0);
-SamplerState gSamplerUV : register(s1);
+SamplerState gSamplerUv : register(s1);
 
 cbuffer Cb : register(b0)
 {
@@ -38,10 +38,10 @@ struct PSIn
 
 float4 main(PSIn input) : SV_TARGET
 {
-    const float y = gTexY.Sample(gSamplerY, float3(input.uvPos, 0));
-    const float2 uv = gTexUV.Sample(gSamplerUV, float3(input.uvPos, 0));
+    const float y = gTexY.Sample(gSamplerY, float3(input.uvPos, 0.f));
+    const float2 uv = gTexUv.Sample(gSamplerUv, float3(input.uvPos, 0.f));
     const float3 rgb = mul(gYuvToRgb, float4(y, uv, 1.f)).rgb;
-    return float4(saturate(rgb), 1);
+    return float4(saturate(rgb), 1.f);
 }
 )" };
 
@@ -286,7 +286,7 @@ CVeVideo::PIPELINE_STATE CVeVideo::DxSaveState() noexcept
     return State;
 }
 
-void CVeVideo::DxRestoreState(const PIPELINE_STATE& State)
+void CVeVideo::DxRestoreState(const PIPELINE_STATE& State) noexcept
 {
     m_pContext->OMSetRenderTargets(1, &State.pRtv, State.pDsv.Get());
     m_pContext->IASetInputLayout(State.pIl.Get());
@@ -326,10 +326,10 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
     m_pContext->RSSetViewports(1, &Viewport);
 
     D3D11_RECT rcClip;
-    rcClip.left = LogicalToPixel(rcVideo.left + ps.ox);
-    rcClip.top = LogicalToPixel(rcVideo.top + ps.oy);
-    rcClip.right = rcClip.left + LogicalToPixel(rcVideo.right - rcVideo.left);
-    rcClip.bottom = rcClip.top + LogicalToPixel(rcVideo.bottom - rcVideo.top);
+    rcClip.left = (int)LogicalToPixel(rcVideo.left + ps.ox);
+    rcClip.top = (int)LogicalToPixel(rcVideo.top + ps.oy);
+    rcClip.right = rcClip.left + (int)LogicalToPixel(rcVideo.right - rcVideo.left);
+    rcClip.bottom = rcClip.top + (int)LogicalToPixel(rcVideo.bottom - rcVideo.top);
     m_pContext->RSSetScissorRects(1, &rcClip);
 
     // --

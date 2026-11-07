@@ -93,12 +93,25 @@ void CFfmpeg::ThreadVideoDecode() noexcept
 {
     int r;
     FfPtr<AVPacket> pPacket;
+    auto nSerial = m_nSeekSerial.load(std::memory_order_acquire);
     while (!m_bStopDecode.load(std::memory_order_acquire))
     {
         if (!pPacket)
         {
             if (!m_qVideo.Pop(pPacket))
                 break;
+        }
+
+        const auto n = eck::PointerToDword<USHORT>(pPacket->opaque);
+        if (n != m_nSeekSerial.load(std::memory_order_acquire))
+        {
+            pPacket.Clear();
+            continue;
+        }
+        if (n != nSerial)
+        {
+            nSerial = n;
+            avcodec_flush_buffers(m_pVideoCodecCtx.Get());
         }
 
         r = avcodec_send_packet(m_pVideoCodecCtx.Get(), pPacket.Get());
@@ -122,6 +135,7 @@ void CFfmpeg::ThreadVideoDecode() noexcept
         if (r)
             continue;
 
+        pFrame->opaque = eck::DwordToPointer<void*>(nSerial);
         if (!m_qVideoDecoded.Push(std::move(pFrame)))
             break;
     }
@@ -131,12 +145,25 @@ void CFfmpeg::ThreadAudioDecode() noexcept
 {
     int r;
     FfPtr<AVPacket> pPacket;
+    auto nSerial = m_nSeekSerial.load(std::memory_order_acquire);
     while (!m_bStopDecode.load(std::memory_order_acquire))
     {
         if (!pPacket)
         {
             if (!m_qAudio.Pop(pPacket))
                 break;
+        }
+
+        const auto n = eck::PointerToDword<USHORT>(pPacket->opaque);
+        if (n != m_nSeekSerial.load(std::memory_order_acquire))
+        {
+            pPacket.Clear();
+            continue;
+        }
+        if (n != nSerial)
+        {
+            nSerial = n;
+            avcodec_flush_buffers(m_pAudioCodecCtx.Get());
         }
 
         r = avcodec_send_packet(m_pAudioCodecCtx.Get(), pPacket.Get());
@@ -155,6 +182,7 @@ void CFfmpeg::ThreadAudioDecode() noexcept
         if (r)
             continue;
 
+        pFrame->opaque = eck::DwordToPointer<void*>(nSerial);
         if (!m_qAudioDecoded.Push(std::move(pFrame)))
             break;
     }
@@ -163,14 +191,35 @@ void CFfmpeg::ThreadAudioDecode() noexcept
 void CFfmpeg::ThreadDemux() noexcept
 {
     int r;
+    auto nSerial = m_nSeekSerial.load(std::memory_order_acquire);
     while (!m_bStopDecode.load(std::memory_order_acquire))
     {
+        if (const auto s = m_ptsSeek.exchange(-1., std::memory_order_acq_rel); s >= 0.)
+        {
+            const auto ts = int64_t(s * AV_TIME_BASE);
+            r = av_seek_frame(m_pFmtCtx.Get(), -1, ts, AVSEEK_FLAG_BACKWARD);
+            if (r < 0)
+                r = avformat_seek_file(
+                    m_pFmtCtx.Get(), -1, INT64_MIN, ts, INT64_MAX, 0);
+            if (r < 0)
+                r = av_seek_frame(m_pFmtCtx.Get(), -1, ts, AVSEEK_FLAG_ANY);
+            nSerial = m_nSeekSerial.load(std::memory_order_acquire);
+            continue;
+        }
+
         FfPtr<AVPacket> pPacket{ av_packet_alloc() };
         if (!pPacket)
             break;
         r = av_read_frame(m_pFmtCtx.Get(), pPacket.Get());
         if (r < 0)
             break;
+
+        if (m_nSeekSerial.load(std::memory_order_acquire) != nSerial)
+        {
+            pPacket.Clear();
+            continue;
+        }
+        pPacket->opaque = eck::DwordToPointer<void*>(nSerial);
 
         bool b;
         if (pPacket->stream_index == m_idxStreamVideo)
@@ -369,6 +418,7 @@ void CFfmpeg::Stop() noexcept
     m_pFmtCtx.Clear();
     m_idxStreamVideo = -1;
     m_idxStreamAudio = -1;
+    m_ptsSeek.store(-1., std::memory_order_release);
 }
 
 double CFfmpeg::GetPresentTimestamp(
@@ -376,8 +426,9 @@ double CFfmpeg::GetPresentTimestamp(
     int idxStream) noexcept
 {
     const auto& Stream = *m_pFmtCtx->streams[idxStream];
+    const auto ptsStart = (Stream.start_time == AV_NOPTS_VALUE) ? 0 : Stream.start_time;
     const auto d =
-        (pFrame->best_effort_timestamp - Stream.start_time) *
+        (pFrame->best_effort_timestamp - ptsStart) *
         av_q2d(Stream.time_base);
     return std::max(d, 0.);
 }
@@ -388,4 +439,31 @@ void CFfmpeg::GetAudioFormat(
 {
     nSampleRate = m_pAudioCodecCtx->sample_rate;
     cChannel = m_pAudioCodecCtx->ch_layout.nb_channels;
+}
+
+void CFfmpeg::Seek(double s) noexcept
+{
+    m_nSeekSerial.fetch_add(1, std::memory_order_acq_rel);
+    m_ptsSeek.store(s, std::memory_order_release);
+    m_qAudio.Clear();
+    m_qVideo.Clear();
+    m_qAudioDecoded.Clear();
+    m_qVideoDecoded.Clear();
+}
+
+double CFfmpeg::GetDuration() noexcept
+{
+    if (!m_pFmtCtx)
+        return 0.;
+    if (m_pFmtCtx->duration != AV_NOPTS_VALUE)
+        return m_pFmtCtx->duration * av_q2d(AV_TIME_BASE_Q);
+
+    double d = 0.;
+    for (UINT i = 0; i < m_pFmtCtx->nb_streams; ++i)
+    {
+        const auto& e = *m_pFmtCtx->streams[i];
+        if (e.duration != AV_NOPTS_VALUE)
+            d = std::max(d, e.duration * av_q2d(e.time_base));
+    }
+    return d;
 }

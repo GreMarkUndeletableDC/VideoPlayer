@@ -108,26 +108,28 @@ public:
 
     size_t Size() noexcept
     {
-        eck::CSrwReadGuard _{ m_Lock };
+        const eck::CSrwReadGuard _{ m_Lock };
         return m_cSize;
     }
     size_t Capacity() noexcept
     {
-        eck::CSrwReadGuard _{ m_Lock };
+        const eck::CSrwReadGuard _{ m_Lock };
         return m_cCapacity;
     }
 
     void Clear() noexcept
     {
-        eck::CSrwWriteGuard _{ m_Lock };
-        InternalClear();
+        {
+            const eck::CSrwWriteGuard _{ m_Lock };
+            InternalClear();
+        }
         m_CvNotFull.WakeAll();
     }
 
     void Close() noexcept
     {
         {
-            eck::CSrwWriteGuard _{ m_Lock };
+            const eck::CSrwWriteGuard _{ m_Lock };
             m_bClosed = true;
             InternalClear();
         }
@@ -137,7 +139,7 @@ public:
 
     void Open() noexcept
     {
-        eck::CSrwWriteGuard _{ m_Lock };
+        const eck::CSrwWriteGuard _{ m_Lock };
         m_bClosed = false;
     }
 };

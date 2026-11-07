@@ -26,14 +26,15 @@ public:
     };
 private:
     CFfmpeg m_Ffmpeg{};
+
     CAudioPlayer m_AudioPlayer{};
     eck::CWaitableObject m_ThreadAudio{};
-    std::atomic_bool m_bStopAudio{};
+    std::atomic<bool> m_bStopAudio{};
 
     LARGE_INTEGER m_QpcFreq{};
     LARGE_INTEGER m_QpcDisplay{};
-    double m_ptsLastVideo{};
-    bool m_bLastVideoPtsValid{};
+    std::atomic<double> m_ptsLastVideo{};
+    std::atomic<bool> m_bLastVideoPtsValid{};
 
     SwsContext* m_pSws{};
 
@@ -53,12 +54,31 @@ public:
 
     int OpenFile(std::wstring_view svFile) noexcept;
 
-    bool PopVideoFrame(
+    bool VideoPopFrame(
         Eck_Out_buffer_ VideoFrame& Frame,
         _Inout_ VideoFrameContext& Context) noexcept;
 
-    double GetMasterClock() noexcept;
+    double VideoGetMasterClock() noexcept;
 
-    void SetCurrentVideoFramePresentTimestamp(double pts) noexcept;
-    EckInlineNdCe bool HasDisplayedFrame() const noexcept { return m_bLastVideoPtsValid; }
+    void VideoSetCurrentPresentTimestamp(double pts) noexcept;
+    bool VideoIsLastPresentTimestampValid() const noexcept
+    {
+        return m_bLastVideoPtsValid.load(std::memory_order_acquire);
+    }
+
+    USHORT GetSeekSerial() const noexcept
+    {
+        return m_Ffmpeg.GetSeekSerial();
+    }
+
+    void Seek(double s) noexcept;
+
+    double GetPosition() noexcept
+    {
+        return VideoGetMasterClock();
+    }
+    double GetDuration() noexcept
+    {
+        return m_Ffmpeg.GetDuration();
+    }
 };

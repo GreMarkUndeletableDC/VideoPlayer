@@ -2,13 +2,11 @@
 #include "CWindowMain.h"
 
 constexpr float
-CyTrackSize = 6,
-CyTrackBar = 26,
-CxPlayList = 300,
-CxListContMargin = 10,
-CyListContMargin = 10;
+ProgressTrackSize = 6,
+ProgressTrackThumbSize = 10,
+ProgressTrackTrackBarHeight = 26;
 
-constexpr float AnDurList = 400;
+constexpr double ProgressScale = 100.;
 
 LRESULT CWindowMain::OnCreate()
 {
@@ -28,13 +26,10 @@ LRESULT CWindowMain::OnCreate()
 
     m_TB.Create({}, Dui::DES_VISIBLE | Dui::DES_NOTIFY_WND, 0,
         0, 0, 0, 0, nullptr, this);
-    m_TB.SetTrackSize(CyTrackSize);
-    m_TB.SetThumbSize(10);
-
-    //m_ListContainer.Create(nullptr, Dui::DES_VISIBLE, 0,
-    //    0, 0, 0, 0, nullptr, this);
-    //m_ListContainer.SetTextFormat(m_pTextFormat.Get());
-
+    m_TB.SetTrackSize(ProgressTrackSize);
+    m_TB.SetThumbSize(ProgressTrackThumbSize);
+    m_TB.SetRange(0.f, 100.f);
+    m_TB.SetThumbTrack(false);
     return 0;
 }
 
@@ -48,7 +43,7 @@ LRESULT CWindowMain::OnMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept
         const auto cx = GetClientWidthLogical();
         const auto cy = GetClientHeightLogical();
         m_Video.SetSize(cx, cy);
-        m_TB.SetRect({ 0, cy - CyTrackBar, cx, cy });
+        m_TB.SetRect({ 0, cy - ProgressTrackTrackBarHeight, cx, cy });
         return lResult;
     }
     break;
@@ -101,7 +96,27 @@ LRESULT CWindowMain::OnRenderEvent(UINT uMsg, Dui::RENDER_EVENT& e) noexcept
 
 LRESULT CWindowMain::OnElementNotify(Dui::CElement* pEle, Dui::ELENMHDR* pnm) noexcept
 {
+    if (pEle == &m_TB)
+    {
+        switch (pnm->uNotify)
+        {
+        case Dui::ENC_POSCHANGED:
+            Seek(m_TB.GetTrackPosition() / ProgressScale);
+            break;
+        }
+    }
     return 0;
+}
+
+void CWindowMain::Seek(double s) noexcept
+{
+    m_VideoFrame = {};
+    m_bHasPendingVideoFrame = false;
+
+    m_Player.Seek(s);
+
+    m_TB.SetTrackPosition(float(s * ProgressScale));
+    RdInvalidate();
 }
 
 void CWindowMain::OpenFile(PCWSTR pszFile) noexcept
@@ -111,6 +126,9 @@ void CWindowMain::OpenFile(PCWSTR pszFile) noexcept
 
     m_Video.ResetVideo();
     m_Player.OpenFile(pszFile);
+
+    m_TB.SetRange(0.f, float(m_Player.GetDuration() * ProgressScale));
+    m_TB.SetTrackPosition(0.f);
     RdInvalidate();
 }
 
@@ -124,14 +142,14 @@ void CWindowMain::TlTick(int ms) noexcept
             {
                 .pSoftwareBuffer = &m_Video.GetSoftwareByteBuffer(),
             };
-            if (!m_Player.PopVideoFrame(m_VideoFrame, Ctx))
+            if (!m_Player.VideoPopFrame(m_VideoFrame, Ctx))
                 break;
             m_bHasPendingVideoFrame = true;
         }
 
-        if (m_Player.HasDisplayedFrame())
+        const auto t = m_Player.VideoGetMasterClock();
+        if (m_Player.VideoIsLastPresentTimestampValid())
         {
-            const auto t = m_Player.GetMasterClock();
             if (m_VideoFrame.pts > t + 0.02)
                 break;
             if (m_VideoFrame.pts < t - 0.02)
@@ -142,10 +160,12 @@ void CWindowMain::TlTick(int ms) noexcept
             }
         }
 
-        m_Player.SetCurrentVideoFramePresentTimestamp(m_VideoFrame.pts);
+        m_Player.VideoSetCurrentPresentTimestamp(m_VideoFrame.pts);
         m_Video.SetVideoFrame(std::move(m_VideoFrame));
         m_VideoFrame = {};
         m_bHasPendingVideoFrame = false;
+
+        m_TB.SetTrackPosition(float(t * ProgressScale));
         RdInvalidate();
     }
 }

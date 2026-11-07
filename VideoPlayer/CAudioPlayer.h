@@ -14,12 +14,26 @@ private:
     UINT m_nSampleRate{};
 
     std::atomic<double> m_ptsLast{};
-    std::atomic_bool m_bLastPtsValid{};
+    std::atomic<bool> m_bLastPtsValid{};
 
-    std::atomic_bool m_bExit{};
+    std::atomic<bool> m_bSeek{};
+
+    std::atomic<bool> m_bExit{};
 public:
-    HRESULT Initialize(UINT uSampleRate, UINT cChannel) noexcept;
+    HRESULT Initialize(UINT nSampleRate, UINT cChannel) noexcept;
     void Shutdown() noexcept;
+
+    void Seek(double pts) noexcept;
+    void Reset() noexcept;
+
+    bool IsSeekRequested() const noexcept
+    {
+        return m_bSeek.load(std::memory_order_acquire);
+    }
+    void CompleteSeek() noexcept
+    {
+        m_bSeek.store(false, std::memory_order_release);
+    }
 
     // 返回[-1, 1]归一化交错浮点缓冲区
     std::span<float> GetBuffer(UINT cRequested) noexcept;
