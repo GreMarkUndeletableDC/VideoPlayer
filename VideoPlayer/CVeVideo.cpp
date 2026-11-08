@@ -10,20 +10,28 @@ LRESULT CVeVideo::OnEvent(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept
         Dui::PAINTINFO ps;
         BeginPaint(ps, wParam, lParam);
 
-        GetDC()->Flush();
+        if (!m_Frame.cx || !m_Frame.cy ||
+            !m_cxTexture || !m_cyTexture)
+        {
+            GetDC()->FillRectangle(ps.rcClip,
+                GetWindow().CcSetBrushColor(D2D1::ColorF{ D2D1::ColorF::Black }));
+        }
+        else
+        {
+            GetDC()->Flush();
+            ComPtr<ID2D1Image> pTarget;
+            ComPtr<ID2D1Bitmap1> pBitmap;
+            ComPtr<IDXGISurface> pSurface;
+            ComPtr<ID3D11Texture2D> pTargetTexture;
+            GetDC()->GetTarget(&pTarget);
+            pTarget.As(pBitmap);
+            pBitmap->GetSurface(&pSurface);
+            pSurface.As(pTargetTexture);
 
-        ComPtr<ID2D1Image> pTarget;
-        ComPtr<ID2D1Bitmap1> pBitmap;
-        ComPtr<IDXGISurface> pSurface;
-        ComPtr<ID3D11Texture2D> pTargetTexture;
-        GetDC()->GetTarget(&pTarget);
-        pTarget.As(pBitmap);
-        pBitmap->GetSurface(&pSurface);
-        pSurface.As(pTargetTexture);
-
-        const auto State = DxSaveState();
-        DxRenderVideo(ps, pTargetTexture.Get());
-        DxRestoreState(State);
+            const auto State = DxSaveState();
+            DxRenderVideo(ps, pTargetTexture.Get());
+            DxRestoreState(State);
+        }
 
         EndPaint(ps);
     }

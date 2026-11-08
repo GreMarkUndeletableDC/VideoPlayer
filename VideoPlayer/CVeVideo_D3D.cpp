@@ -301,10 +301,6 @@ void CVeVideo::DxRestoreState(const PIPELINE_STATE& State) noexcept
 
 void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget) noexcept
 {
-    if (!m_Frame.cx || !m_Frame.cy ||
-        !m_cxTexture || !m_cyTexture || !pTarget)
-        return;
-
     Dx3D::CRenderTargetView Rtv{};
     Rtv.Create(nullptr, pTarget);
     m_pContext->OMSetRenderTargets(1, &Rtv, nullptr);
