@@ -31,17 +31,20 @@ LRESULT CVeVideo::OnEvent(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept
                     std::min(MaximumCoverSize, GetHeight()),
                 };
                 eck::CenterRect(rcCenter, GetRectInClientD2D());
-                const auto Size = m_pCoverBitmap->GetSize();
+                const auto Size = m_pCoverBitmap ?
+                    m_pCoverBitmap->GetSize() :
+                    D2D1_SIZE_F{ 100.f, 100.f };
                 D2D1_RECT_F rcCover{ 0.f, 0.f, Size.width, Size.height, };
                 eck::AdjustRectToFitAnother(rcCover, rcCenter);
 
                 if (eck::IsRectsIntersect(rcCover, ps.rcClip))
                 {
-                    GetDC()->DrawBitmap(
-                        m_pCoverBitmap.Get(),
-                        rcCover,
-                        1.f,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                    if (m_pCoverBitmap)
+                        GetDC()->DrawBitmap(
+                            m_pCoverBitmap.Get(),
+                            rcCover,
+                            1.f,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
 
                     eck::InflateRect(rcCover, -CoverBorderWidth / 2.f, -CoverBorderWidth / 2.f);
                     GetDC()->DrawRectangle(
