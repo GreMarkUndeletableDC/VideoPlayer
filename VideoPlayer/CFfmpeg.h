@@ -64,10 +64,7 @@ private:
 
     void StopDecodeThread() noexcept;
 public:
-    void InitializeDirect3D(ID3D11Device* pDevice) noexcept
-    {
-        m_pD3DDevice = pDevice;
-    }
+    void InitializeDirect3D(ID3D11Device* pDevice) noexcept;
 
     Result OpenFile(_In_z_ PCSTR pszPathU8) noexcept;
 

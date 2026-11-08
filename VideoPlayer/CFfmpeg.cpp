@@ -1,6 +1,14 @@
 ﻿#include "pch.h"
 #include "CFfmpeg.h"
 
+void CFfmpeg::InitializeDirect3D(ID3D11Device* pDevice) noexcept
+{
+    m_pD3DDevice = pDevice;
+    ComPtr<ID3D10Multithread> pMt;
+    if (SUCCEEDED(m_pD3DDevice->QueryInterface(&pMt)))
+        pMt->SetMultithreadProtected(TRUE);
+}
+
 bool CFfmpeg::WriteAudioFrame(
     _In_ const AVFrame* pFrame,
     UINT cChannel,
@@ -257,7 +265,6 @@ CFfmpeg::Result CFfmpeg::PrepareVideoCodec() noexcept
                     (AVD3D11VADeviceContext*)((AVHWDeviceContext*)pHwCtx->data)->hwctx;
                 pCtx->device = m_pD3DDevice.Get();
                 pCtx->device_context = nullptr;
-                m_pD3DDevice->CreateDeferredContext(0, &pCtx->device_context);
                 pCtx->lock = nullptr;
                 pCtx->unlock = nullptr;
                 pCtx->BindFlags |= D3D11_BIND_SHADER_RESOURCE;
@@ -361,7 +368,7 @@ CFfmpeg::Result CFfmpeg::OpenFile(_In_z_ PCSTR pszPathU8) noexcept
 
     m_idxStreamVideo = av_find_best_stream(m_pFmtCtx.Get(),
         AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-    if (m_idxStreamVideo >=0)
+    if (m_idxStreamVideo >= 0)
     {
         const auto& s = *m_pFmtCtx->streams[m_idxStreamVideo];
         if (s.disposition & AV_DISPOSITION_ATTACHED_PIC)

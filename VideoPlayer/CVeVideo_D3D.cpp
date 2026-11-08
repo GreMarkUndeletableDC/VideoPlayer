@@ -321,13 +321,6 @@ void CVeVideo::DxRenderVideo(const Dui::PAINTINFO& ps, ID3D11Texture2D* pTarget)
     };
     m_pContext->RSSetViewports(1, &Viewport);
 
-    D3D11_RECT rcClip;
-    rcClip.left = (int)LogicalToPixel(rcVideo.left + ps.ox);
-    rcClip.top = (int)LogicalToPixel(rcVideo.top + ps.oy);
-    rcClip.right = rcClip.left + (int)LogicalToPixel(rcVideo.right - rcVideo.left);
-    rcClip.bottom = rcClip.top + (int)LogicalToPixel(rcVideo.bottom - rcVideo.top);
-    m_pContext->RSSetScissorRects(1, &rcClip);
-
     // --
 
     m_pContext->IASetInputLayout(m_VsAndIl.GetInputLayout());

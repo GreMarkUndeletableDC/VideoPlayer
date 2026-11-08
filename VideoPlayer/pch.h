@@ -36,6 +36,7 @@ EXTERN_C_END
 
 #include <mmdeviceapi.h>
 #include <Audioclient.h>
+#include <d3d10.h>
 
 const inline IID IID_IAudioClient = __uuidof(IAudioClient);
 const inline IID IID_IAudioRenderClient = __uuidof(IAudioRenderClient);
