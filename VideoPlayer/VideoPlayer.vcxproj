@@ -215,6 +215,7 @@
     <ClCompile Include="CPlayer.cpp" />
     <ClCompile Include="CVePlayList.cpp" />
     <ClCompile Include="CVeVideo.cpp" />
+    <ClCompile Include="CVeVideo_D3D.cpp" />
     <ClCompile Include="CWindowMain.cpp" />
     <ClCompile Include="Entry.cpp" />
     <ClCompile Include="MyEck.cpp" />

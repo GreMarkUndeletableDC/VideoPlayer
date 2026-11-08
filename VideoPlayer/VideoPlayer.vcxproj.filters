@@ -98,6 +98,9 @@
     <ClCompile Include="CVeVideo.cpp">
       <Filter>元素</Filter>
     </ClCompile>
+    <ClCompile Include="CVeVideo_D3D.cpp">
+      <Filter>元素</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc">
