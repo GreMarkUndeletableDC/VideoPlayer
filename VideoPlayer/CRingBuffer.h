@@ -42,7 +42,7 @@ public:
     {
     }
 
-    bool Push(T x) noexcept
+    bool Push(T&& x) noexcept
     {
         m_Lock.EnterWrite();
 
@@ -61,7 +61,7 @@ public:
         return true;
     }
 
-    bool TryPush(T x) noexcept
+    bool TryPush(T&& x) noexcept
     {
         m_Lock.EnterWrite();
         if (m_cSize < m_cCapacity && !m_bClosed)

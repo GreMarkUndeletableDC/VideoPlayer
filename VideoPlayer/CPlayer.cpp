@@ -37,6 +37,7 @@ void CPlayer::ThreadAudio() noexcept
         }
 
         const auto cChannel = m_AudioPlayer.GetChannelCount();
+        const auto nSampleRate = m_AudioPlayer.GetSampleRate();
         const auto cSample = pFrame->nb_samples;
         if (cSample <= 0)
         {
@@ -65,7 +66,7 @@ void CPlayer::ThreadAudio() noexcept
 
         m_AudioPlayer.SetCurrentPresentTimestamp(
             m_Ffmpeg.GetPresentTimestamp(pFrame.Get(), m_Ffmpeg.GetAudioStream()) +
-            ((double)cWritten / m_AudioPlayer.GetSampleRate()));
+            ((double)cWritten / nSampleRate));
 
         pFrame.Clear();
     }
@@ -74,12 +75,13 @@ void CPlayer::ThreadAudio() noexcept
 void CPlayer::StopThreadAudio() noexcept
 {
     m_bStopAudio.store(true, std::memory_order_release);
-    m_AudioPlayer.Shutdown();
+    m_AudioPlayer.RequestShutdown();
     if (m_ThreadAudio.Get())
     {
         eck::WaitObject(m_ThreadAudio);
         m_ThreadAudio.Clear();
     }
+    m_AudioPlayer.Shutdown();
 }
 
 static void CalculateYuvToRgbMatrix(
@@ -269,7 +271,6 @@ int CPlayer::OpenFile(std::wstring_view svFile) noexcept
 
     m_Ffmpeg.Stop();
     StopThreadAudio();
-    m_AudioPlayer.Shutdown();
 
     m_bLastVideoPtsValid = false;
     m_ptsLastVideo = 0.;

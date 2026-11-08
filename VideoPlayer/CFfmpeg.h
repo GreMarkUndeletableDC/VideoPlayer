@@ -21,7 +21,7 @@ public:
         int nCode;
     };
 private:
-    static constexpr size_t QueuePacketSize = 64;
+    static constexpr size_t QueuePacketSize = 72;
     static constexpr size_t QueueVideoSize = 10;
     static constexpr size_t QueueAudioSize = 256;
 

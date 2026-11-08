@@ -13,14 +13,18 @@ private:
     UINT m_cChannel{};
     UINT m_nSampleRate{};
 
-    std::atomic<double> m_ptsLast{};
-    std::atomic<bool> m_bLastPtsValid{};
+    LARGE_INTEGER m_QpcFreq{};
+    LARGE_INTEGER m_QpcAnchor{};
+    eck::CSrwLock m_Lock{};
+    double m_ptsAnchor{};
+    bool m_bAnchorValid{};
 
     std::atomic<bool> m_bSeek{};
-
     std::atomic<bool> m_bExit{};
 public:
     HRESULT Initialize(UINT nSampleRate, UINT cChannel) noexcept;
+
+    void RequestShutdown() noexcept;
     void Shutdown() noexcept;
 
     void Seek(double pts) noexcept;

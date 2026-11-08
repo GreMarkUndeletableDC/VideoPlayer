@@ -6,6 +6,9 @@ HRESULT CAudioPlayer::Initialize(UINT nSampleRate, UINT cChannel) noexcept
     Shutdown();
     m_bExit.store(false, std::memory_order_release);
 
+    LARGE_INTEGER Dummy;
+    NtQueryPerformanceCounter(&Dummy, &m_QpcFreq);
+
     HRESULT hr;
     hr = m_pDeviceEnumerator.CreateInstance(CLSID_MMDeviceEnumerator);
     if (FAILED(hr))
@@ -75,13 +78,19 @@ HRESULT CAudioPlayer::Initialize(UINT nSampleRate, UINT cChannel) noexcept
     return S_OK;
 }
 
-void CAudioPlayer::Shutdown() noexcept
+void CAudioPlayer::RequestShutdown() noexcept
 {
     m_bExit.store(true, std::memory_order_release);
     m_Event.Signal();
     if (m_pClient)
-    {
         m_pClient->Stop();
+}
+
+void CAudioPlayer::Shutdown() noexcept
+{
+    RequestShutdown();
+    if (m_pClient)
+    {
         m_pClient->Reset();
         m_pClient.Clear();
     }
@@ -91,14 +100,25 @@ void CAudioPlayer::Shutdown() noexcept
     m_cAudioBuffer = 0;
     m_cChannel = 0;
     m_nSampleRate = 0;
-    m_ptsLast.store(0., std::memory_order_relaxed);
-    m_bLastPtsValid.store(false, std::memory_order_release);
+    {
+        const eck::CSrwWriteGuard _{ m_Lock };
+        m_bAnchorValid = false;
+        m_ptsAnchor = 0.;
+        m_QpcAnchor.QuadPart = 0;
+    }
 }
 
 void CAudioPlayer::Seek(double pts) noexcept
 {
+    LARGE_INTEGER Qpc;
+    NtQueryPerformanceCounter(&Qpc, nullptr);
+    {
+        const eck::CSrwWriteGuard _{ m_Lock };
+        m_ptsAnchor = pts;
+        m_QpcAnchor = Qpc;
+        m_bAnchorValid = true;
+    }
     m_bSeek.store(true, std::memory_order_release);
-    SetCurrentPresentTimestamp(pts);
     m_Event.Signal();
 }
 
@@ -144,19 +164,35 @@ void CAudioPlayer::ReleaseBuffer(UINT cWritten) noexcept
 
 void CAudioPlayer::SetCurrentPresentTimestamp(double pts) noexcept
 {
-    m_ptsLast.store(pts, std::memory_order_relaxed);
-    m_bLastPtsValid.store(true, std::memory_order_release);
+    if (m_pClient && m_nSampleRate)
+    {
+        UINT32 cPadding{};
+        if (SUCCEEDED(m_pClient->GetCurrentPadding(&cPadding)))
+            pts -= double(cPadding) / double(m_nSampleRate);
+    }
+
+    LARGE_INTEGER Qpc;
+    NtQueryPerformanceCounter(&Qpc, nullptr);
+
+    const eck::CSrwWriteGuard _{ m_Lock };
+    if (m_bAnchorValid)
+    {
+        pts = m_ptsAnchor +
+            double(Qpc.QuadPart - m_QpcAnchor.QuadPart) / m_QpcFreq.QuadPart;
+    }
+    m_ptsAnchor = pts;
+    m_QpcAnchor = Qpc;
+    m_bAnchorValid = true;
 }
 
 double CAudioPlayer::GetCurrentTime() noexcept
 {
-    if (!m_bLastPtsValid.load(std::memory_order_acquire))
+    LARGE_INTEGER Qpc;
+    NtQueryPerformanceCounter(&Qpc, nullptr);
+
+    const eck::CSrwReadGuard _{ m_Lock };
+    if (!m_bAnchorValid)
         return -1.;
-    const auto pts = m_ptsLast.load(std::memory_order_relaxed);
-    if (m_bSeek.load(std::memory_order_acquire))
-        return pts;
-    UINT32 cPadding{};
-    if (FAILED(m_pClient->GetCurrentPadding(&cPadding)))
-        return pts;
-    return pts - ((double)cPadding / m_nSampleRate);
+    return m_ptsAnchor +
+        double(Qpc.QuadPart - m_QpcAnchor.QuadPart) / m_QpcFreq.QuadPart;
 }
