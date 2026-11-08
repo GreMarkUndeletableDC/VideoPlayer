@@ -31,14 +31,15 @@ private:
     Dx3D::CTexture m_TextureY{};
     Dx3D::CTexture m_TextureUv{};
     UINT m_cxTexture{}, m_cyTexture{};
+    DXGI_FORMAT m_eFormatY{}, m_eFormatUv{};
 
     CPlayer::VideoFrame m_Frame{};
-
     eck::CByteBuffer m_rbSoftware{};
 
-    DXGI_FORMAT m_eFormatY{}, m_eFormatUv{};
-    bool m_bHardwareDecode{};
+    ComPtr<ID2D1Bitmap1> m_pCoverBitmap{};
 
+    bool m_bHardwareDecode{};
+    bool m_bShowCover{};
 
     HRESULT DxInitialize() noexcept;
     void DxUninitialize() noexcept;
@@ -59,4 +60,7 @@ public:
     void ResetVideo() noexcept;
 
     EckInlineNdCe auto& GetSoftwareByteBuffer() noexcept { return m_rbSoftware; }
+
+    void SetCoverBitmap(IWICBitmapSource* pBitmap) noexcept;
+    EckInlineCe void SetShowCover(bool b) noexcept { m_bShowCover = b; }
 };

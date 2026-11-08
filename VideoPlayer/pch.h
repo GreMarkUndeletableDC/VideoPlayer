@@ -11,7 +11,12 @@
 #include "eck\CCriticalSection.h"
 #include "eck\CConditionVariable.h"
 #include "eck\Utility2.h"
-#include "eck/CScopeGuard.h"
+#include "eck\CScopeGuard.h"
+#include "eck\ImageHelper.h"
+#include "eck\MediaTag.h"
+#include "eck\MediaTagID3v2.h"
+#include "eck\MediaTagApe.h"
+#include "eck\MediaTagFlac.h"
 
 #include <deque>
 
@@ -41,9 +46,11 @@ using eck::PCVOID;
 using eck::PCBYTE;
 using eck::SafeRelease;
 using eck::ComPtr;
+using eck::RCWH;
 
 namespace Dui = eck::Dui;
 namespace Dx3D = eck::Dx3D;
 namespace Kw = eck::Kw;
+namespace Tag = eck::MediaTag;
 
 #include "CRingBuffer.h"

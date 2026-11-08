@@ -1,12 +1,12 @@
 ﻿#include "pch.h"
 #include "CWindowMain.h"
 
-constexpr float
+static constexpr float
 ProgressTrackSize = 6,
 ProgressTrackThumbSize = 10,
 ProgressTrackTrackBarHeight = 26;
 
-constexpr double ProgressScale = 100.;
+static constexpr double ProgressScale = 100.;
 
 LRESULT CWindowMain::OnCreate()
 {
@@ -127,6 +127,10 @@ void CWindowMain::OpenFile(PCWSTR pszFile) noexcept
     m_Video.ResetVideo();
     m_Player.OpenFile(pszFile);
 
+    m_Video.SetShowCover(m_Player.IsOnlyAudio());
+    if (m_Player.IsOnlyAudio())
+        m_Video.SetCoverBitmap(m_Player.GetCoverBitmap().Get());
+
     m_TB.SetRange(0.f, float(m_Player.GetDuration() * ProgressScale));
     m_TB.SetTrackPosition(0.f);
     RdInvalidate();
@@ -134,6 +138,13 @@ void CWindowMain::OpenFile(PCWSTR pszFile) noexcept
 
 void CWindowMain::TlTick(int ms) noexcept
 {
+    if (m_Player.IsOnlyAudio())
+    {
+        m_TB.SetTrackPosition(float(m_Player.GetPosition() * ProgressScale));
+        m_TB.Invalidate();
+        return;
+    }
+
     EckLoop()
     {
         if (!m_bHasPendingVideoFrame)

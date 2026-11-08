@@ -1,6 +1,10 @@
 ﻿#include "pch.h"
 #include "CVeVideo.h"
 
+static constexpr UINT MaximumCoverPixelSize = 640;
+static constexpr float MaximumCoverSize = 640.f;
+static constexpr float CoverBorderWidth = 1.f;
+
 LRESULT CVeVideo::OnEvent(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept
 {
     switch (uMsg)
@@ -10,11 +14,42 @@ LRESULT CVeVideo::OnEvent(UINT uMsg, WPARAM wParam, LPARAM lParam) noexcept
         Dui::PAINTINFO ps;
         BeginPaint(ps, wParam, lParam);
 
-        if (!m_Frame.cx || !m_Frame.cy ||
+        if (m_bShowCover ||
+            !m_Frame.cx || !m_Frame.cy ||
             !m_cxTexture || !m_cyTexture)
         {
             GetDC()->FillRectangle(ps.rcClip,
                 GetWindow().CcSetBrushColor(D2D1::ColorF{ D2D1::ColorF::Black }));
+
+            if (m_bShowCover)
+            {
+                D2D1_RECT_F rcCenter
+                {
+                    0.f,
+                    0.f,
+                    std::min(MaximumCoverSize, GetWidth()),
+                    std::min(MaximumCoverSize, GetHeight()),
+                };
+                eck::CenterRect(rcCenter, GetRectInClientD2D());
+                const auto Size = m_pCoverBitmap->GetSize();
+                D2D1_RECT_F rcCover{ 0.f, 0.f, Size.width, Size.height, };
+                eck::AdjustRectToFitAnother(rcCover, rcCenter);
+
+                if (eck::IsRectsIntersect(rcCover, ps.rcClip))
+                {
+                    GetDC()->DrawBitmap(
+                        m_pCoverBitmap.Get(),
+                        rcCover,
+                        1.f,
+                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+
+                    eck::InflateRect(rcCover, -CoverBorderWidth / 2.f, -CoverBorderWidth / 2.f);
+                    GetDC()->DrawRectangle(
+                        rcCover,
+                        GetWindow().CcSetBrushColor(D2D1::ColorF{ D2D1::ColorF::White }),
+                        CoverBorderWidth);
+                }
+            }
         }
         else
         {
@@ -75,4 +110,31 @@ void CVeVideo::ResetVideo() noexcept
     m_cyTexture = 0;
     m_eFormatY = DXGI_FORMAT_UNKNOWN;
     m_eFormatUv = DXGI_FORMAT_UNKNOWN;
+}
+
+void CVeVideo::SetCoverBitmap(IWICBitmapSource* pBitmap) noexcept
+{
+    if (!pBitmap)
+    {
+        m_pCoverBitmap.Clear();
+        return;
+    }
+
+    UINT cx, cy;
+    pBitmap->GetSize(&cx, &cy);
+
+    ComPtr<IWICBitmapScaler> pScaler;
+    if (cx > MaximumCoverPixelSize || cy > MaximumCoverPixelSize)
+    {
+        constexpr RCWH rcMax{ 0, 0, (int)MaximumCoverPixelSize, (int)MaximumCoverPixelSize };
+        RCWH rc{ 0, 0, (int)cx, (int)cy };
+        eck::AdjustRectToFitAnother(rc, rcMax);
+        eck::WicScaleBitmap(
+            pScaler.Self(), pBitmap, rc.cx, rc.cy,
+            WICBitmapInterpolationModeFant);
+        if (pScaler)
+            pBitmap = pScaler.Get();
+    }
+
+    GetDC()->CreateBitmapFromWicBitmap(pBitmap, m_pCoverBitmap.AtClear());
 }

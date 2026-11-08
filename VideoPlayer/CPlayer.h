@@ -38,6 +38,8 @@ private:
 
     SwsContext* m_pSws{};
 
+    ComPtr<IWICBitmapSource> m_pCoverBitmap{};
+
     void ThreadAudio() noexcept;
 
     void StopThreadAudio() noexcept;
@@ -46,6 +48,8 @@ private:
         _In_ const AVFrame* pFrame,
         _Inout_ VideoFrame& Frame,
         const VideoFrameContext& Context) noexcept;
+
+    void ReadAudioCover(_In_z_ PCWSTR pszFile) noexcept;
 public:
     CPlayer() = default;
     ~CPlayer() noexcept;
@@ -81,4 +85,10 @@ public:
     {
         return m_Ffmpeg.GetDuration();
     }
+
+    bool IsOnlyAudio() const noexcept
+    {
+        return m_Ffmpeg.GetVideoStream() < 0 && m_Ffmpeg.GetAudioStream() >= 0;
+    }
+    EckInlineNdCe auto& GetCoverBitmap() noexcept { return m_pCoverBitmap; }
 };

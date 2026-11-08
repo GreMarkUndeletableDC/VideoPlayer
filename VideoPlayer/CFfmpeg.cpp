@@ -361,6 +361,25 @@ CFfmpeg::Result CFfmpeg::OpenFile(_In_z_ PCSTR pszPathU8) noexcept
 
     m_idxStreamVideo = av_find_best_stream(m_pFmtCtx.Get(),
         AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    if (m_idxStreamVideo >=0)
+    {
+        const auto& s = *m_pFmtCtx->streams[m_idxStreamVideo];
+        if (s.disposition & AV_DISPOSITION_ATTACHED_PIC)
+        {
+            m_idxStreamVideo = -1;
+            for (UINT i = 0; i < m_pFmtCtx->nb_streams; ++i)
+            {
+                const auto& e = *m_pFmtCtx->streams[i];
+                if (e.codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+                    !(e.disposition & AV_DISPOSITION_ATTACHED_PIC))
+                {
+                    m_idxStreamVideo = (int)i;
+                    break;
+                }
+            }
+        }
+    }
+
     m_idxStreamAudio = av_find_best_stream(m_pFmtCtx.Get(),
         AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
     if (m_idxStreamVideo < 0 && m_idxStreamAudio < 0)

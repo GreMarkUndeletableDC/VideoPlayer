@@ -218,6 +218,42 @@ void CPlayer::ConvertSoftwareFrame(
     Frame.b10Bit = (eFmtDest == AV_PIX_FMT_P010LE);
 }
 
+void CPlayer::ReadAudioCover(_In_z_ PCWSTR pszFile) noexcept
+{
+    Tag::CMediaFile File{ pszFile };
+    if (!File.IsValid())
+        return;
+    Tag::SimpleData mi{};
+    mi.uMask = Tag::MIM_COVER;
+    if (File.GetTagType() & (Tag::TAG_ID3V2_3 | Tag::TAG_ID3V2_4))
+    {
+        Tag::CID3v2 Tag{ File };
+        Tag.ReadTag();
+        Tag.SimpleGet(mi, {});
+    }
+    if (File.GetTagType()& Tag::TAG_APE)
+    {
+        Tag::CApe Tag{ File };
+        Tag.ReadTag();
+        Tag.SimpleGet(mi, {});
+    }
+    if (File.GetTagType()& Tag::TAG_FLAC)
+    {
+        Tag::CFlac Tag{ File };
+        Tag.ReadTag();
+        Tag.SimpleGet(mi, {});
+    }
+
+    const auto pCover = mi.GetMainCover();
+    if (!pCover)
+        return;
+
+    ComPtr<IStream> pStream{};
+    pCover->CreateStream(pStream.Self(), true);
+
+    eck::WicLoadSource(m_pCoverBitmap.SelfClear(), pStream.Get());
+}
+
 HRESULT CPlayer::Initialize() noexcept
 {
     LARGE_INTEGER Dummy;
@@ -238,6 +274,8 @@ int CPlayer::OpenFile(std::wstring_view svFile) noexcept
     m_bLastVideoPtsValid = false;
     m_ptsLastVideo = 0.;
 
+    m_pCoverBitmap.Clear();
+
     const auto r = m_Ffmpeg.OpenFile(rsPathU8.Data());
     if (r.eType != CFfmpeg::ErrorType::Ok)
         return r.nCode;
@@ -256,6 +294,8 @@ int CPlayer::OpenFile(std::wstring_view svFile) noexcept
                     return 0;
                 }, this));
         }
+        if (m_Ffmpeg.GetVideoStream() < 0)
+            ReadAudioCover(svFile.data());
     }
 
     return r.nCode;
