@@ -140,8 +140,12 @@ void CWindowMain::TlTick(int ms) noexcept
 {
     if (m_Player.IsOnlyAudio())
     {
-        m_TB.SetTrackPosition(float(m_Player.GetPosition() * ProgressScale));
-        m_TB.Invalidate();
+        const auto t = m_Player.GetPosition();
+        if (t != CClock::None)
+        {
+            m_TB.SetTrackPosition(float(t * ProgressScale));
+            m_TB.Invalidate();
+        }
         return;
     }
 
@@ -159,11 +163,11 @@ void CWindowMain::TlTick(int ms) noexcept
         }
 
         const auto t = m_Player.VideoGetMasterClock();
-        if (m_Player.VideoIsLastPresentTimestampValid())
+        if (t != CClock::None)
         {
-            if (m_VideoFrame.pts > t + 0.02)
+            if (m_VideoFrame.pts > t + 0.015)
                 break;
-            if (m_VideoFrame.pts < t - 0.02)
+            if (m_VideoFrame.pts < t - 0.01)
             {
                 m_VideoFrame = {};
                 m_bHasPendingVideoFrame = false;
@@ -171,12 +175,13 @@ void CWindowMain::TlTick(int ms) noexcept
             }
         }
 
-        m_Player.VideoSetCurrentPresentTimestamp(m_VideoFrame.pts);
+        const auto pts = m_VideoFrame.pts;
+        m_Player.VideoAnchorClock(pts);
         m_Video.SetVideoFrame(std::move(m_VideoFrame));
         m_VideoFrame = {};
         m_bHasPendingVideoFrame = false;
 
-        m_TB.SetTrackPosition(float(t * ProgressScale));
+        m_TB.SetTrackPosition(float(pts * ProgressScale));
         RdInvalidate();
     }
 }

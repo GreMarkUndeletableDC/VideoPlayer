@@ -195,8 +195,10 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="AudioFormat.h" />
     <ClInclude Include="CApplication.h" />
     <ClInclude Include="CAudioPlayer.h" />
+    <ClInclude Include="CClock.h" />
     <ClInclude Include="CRingBuffer.h" />
     <ClInclude Include="CFfmpeg.h" />
     <ClInclude Include="CPlayer.h" />
@@ -209,8 +211,10 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AudioFormat.cpp" />
     <ClCompile Include="CApplication.cpp" />
     <ClCompile Include="CAudioPlayer.cpp" />
+    <ClCompile Include="CClock.cpp" />
     <ClCompile Include="CFfmpeg.cpp" />
     <ClCompile Include="CPlayer.cpp" />
     <ClCompile Include="CVePlayList.cpp" />

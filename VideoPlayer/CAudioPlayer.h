@@ -1,6 +1,16 @@
 ﻿#pragma once
+#include "AudioFormat.h"
+
 class CAudioPlayer
 {
+public:
+    enum class WriteState
+    {
+        Ok,         // 所有数据已成功写入
+        Seek,       // 由于查找操作，调用方应丢弃当前数据
+        DeviceLost, // 设备已无效，调用方应重新初始化音频播放
+        Exit,       // 正在退出
+    };
 private:
     ComPtr<IMMDeviceEnumerator> m_pDeviceEnumerator{};
     ComPtr<IMMDevice> m_pDevice{};
@@ -9,45 +19,23 @@ private:
 
     eck::CEvent m_Event{};
 
-    UINT m_cAudioBuffer{};
-    UINT m_cChannel{};
-    UINT m_nSampleRate{};
+    WAVEFORMATEXTENSIBLE m_wfx{};
 
-    LARGE_INTEGER m_QpcFreq{};
-    LARGE_INTEGER m_QpcAnchor{};
-    eck::CSrwLock m_Lock{};
-    double m_ptsAnchor{};
-    bool m_bAnchorValid{};
+    UINT m_cAudioBuffer{};
 
     std::atomic<bool> m_bSeek{};
     std::atomic<bool> m_bExit{};
 public:
-    HRESULT Initialize(UINT nSampleRate, UINT cChannel) noexcept;
+    HRESULT Initialize() noexcept;
 
     void RequestShutdown() noexcept;
     void Shutdown() noexcept;
 
-    void Seek(double pts) noexcept;
-    void Reset() noexcept;
+    void RequestSeek() noexcept;
 
-    bool IsSeekRequested() const noexcept
-    {
-        return m_bSeek.load(std::memory_order_acquire);
-    }
-    void CompleteSeek() noexcept
-    {
-        m_bSeek.store(false, std::memory_order_release);
-    }
+    WriteState Write(PCVOID pData, UINT cFrames, _Out_ UINT& cWritten) noexcept;
 
-    // 返回[-1, 1]归一化交错浮点缓冲区
-    std::span<float> GetBuffer(UINT cRequested) noexcept;
-    void ReleaseBuffer(UINT cWritten) noexcept;
+    EckInlineNdCe auto& GetWaveFormat() const noexcept { return m_wfx.Format; }
 
-    // 负值表示无效
-    double GetCurrentTime() noexcept;
-
-    EckInlineNdCe UINT GetChannelCount() const noexcept { return m_cChannel; }
-    EckInlineNdCe UINT GetSampleRate() const noexcept { return m_nSampleRate; }
-
-    void SetCurrentPresentTimestamp(double pts) noexcept;
+    UINT GetCurrentPadding() noexcept;
 };

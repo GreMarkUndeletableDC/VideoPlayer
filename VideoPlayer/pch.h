@@ -31,6 +31,7 @@ EXTERN_C_START
 #include <libavutil/pixdesc.h>
 #include <libavutil/csp.h>
 #include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
 #pragma warning(pop)
 EXTERN_C_END
 
@@ -54,4 +55,5 @@ namespace Dx3D = eck::Dx3D;
 namespace Kw = eck::Kw;
 namespace Tag = eck::MediaTag;
 
-#include "CRingBuffer.h"
+using TSecond = double;
+using TSerial = USHORT;

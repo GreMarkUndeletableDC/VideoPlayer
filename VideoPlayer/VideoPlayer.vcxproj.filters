@@ -66,6 +66,12 @@
     <ClInclude Include="CRingBuffer.h">
       <Filter>工具</Filter>
     </ClInclude>
+    <ClInclude Include="CClock.h">
+      <Filter>工具</Filter>
+    </ClInclude>
+    <ClInclude Include="AudioFormat.h">
+      <Filter>工具</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Entry.cpp">
@@ -100,6 +106,12 @@
     </ClCompile>
     <ClCompile Include="CVeVideo_D3D.cpp">
       <Filter>元素</Filter>
+    </ClCompile>
+    <ClCompile Include="CClock.cpp">
+      <Filter>工具</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioFormat.cpp">
+      <Filter>工具</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

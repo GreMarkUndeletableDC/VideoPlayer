@@ -19,62 +19,71 @@ void CPlayer::ThreadAudio() noexcept
             if (!m_Ffmpeg.PopAudioDecoded(pFrame))
                 break;
         }
-        if (eck::PointerToDword<USHORT>(pFrame->opaque) != m_Ffmpeg.GetSeekSerial())
+        // 高16位格式序列号，低16位Seek序列号
+        const auto dwOpaque = eck::PointerToDword<DWORD>(pFrame->opaque);
+        const auto nSerial = TSerial(dwOpaque & 0xFFFF);
+        if (TSerial(dwOpaque >> 16) != m_Ffmpeg.GetFormatSerial() ||
+            nSerial != m_Ffmpeg.GetSeekSerial())
+        {
+            pFrame.Clear();
+            continue;
+        }
+        if (pFrame->nb_samples <= 0)
         {
             pFrame.Clear();
             continue;
         }
 
-        if (m_AudioPlayer.IsSeekRequested())
+        UINT cWritten{};
+        switch (m_AudioPlayer.Write(pFrame->extended_data[0],
+            (UINT)pFrame->nb_samples, cWritten))
         {
-            m_AudioPlayer.Reset();
-            m_AudioPlayer.CompleteSeek();
-            if (eck::PointerToDword<USHORT>(pFrame->opaque) != m_Ffmpeg.GetSeekSerial())
-            {
-                pFrame.Clear();
-                continue;
-            }
-        }
-
-        const auto cChannel = m_AudioPlayer.GetChannelCount();
-        const auto nSampleRate = m_AudioPlayer.GetSampleRate();
-        const auto cSample = pFrame->nb_samples;
-        if (cSample <= 0)
-        {
+        case CAudioPlayer::WriteState::Seek:
             pFrame.Clear();
             continue;
-        }
-
-        const auto spBuffer = m_AudioPlayer.GetBuffer(cSample);
-        if (spBuffer.empty())
-        {
-            if (m_AudioPlayer.IsSeekRequested())
-                continue;
+        case CAudioPlayer::WriteState::DeviceLost:
+            m_ClockAudio.Invalidate();
+            pFrame.Clear();
+            if (!ReopenAudioDevice())
+                return;
+            continue;
+        case CAudioPlayer::WriteState::Exit:
+            return;
+        case CAudioPlayer::WriteState::Ok:
             break;
         }
 
-        const auto cWritten = UINT(spBuffer.size() / cChannel);
-        if (cWritten < (UINT)cSample)
-        {
-            m_AudioPlayer.ReleaseBuffer(0);
-            pFrame.Clear();
-            continue;
-        }
-        if (!CFfmpeg::WriteAudioFrame(pFrame.Get(), cChannel, spBuffer.data()))
-            RtlZeroMemory(spBuffer.data(), spBuffer.size() * sizeof(float));
-        m_AudioPlayer.ReleaseBuffer(cWritten);
-
-        m_AudioPlayer.SetCurrentPresentTimestamp(
-            m_Ffmpeg.GetPresentTimestamp(pFrame.Get(), m_Ffmpeg.GetAudioStream()) +
-            ((double)cWritten / nSampleRate));
+        if (nSerial == m_Ffmpeg.GetSeekSerial())
+            m_ClockAudio.SetForward(
+                m_Ffmpeg.GetAudioPresentTimestamp(pFrame.Get()) +
+                ((double)cWritten - (double)m_AudioPlayer.GetCurrentPadding()) /
+                m_AudioPlayer.GetWaveFormat().nSamplesPerSec);
 
         pFrame.Clear();
     }
 }
 
+bool CPlayer::ReopenAudioDevice() noexcept
+{
+    while (!m_bStopAudio.load(std::memory_order_acquire))
+    {
+        if (SUCCEEDED(m_AudioPlayer.Initialize()))
+        {
+            AoFormat Fmt;
+            AoMakeFormat(&m_AudioPlayer.GetWaveFormat(), Fmt);
+            m_Ffmpeg.SwrSetAoFormat(Fmt);
+            return true;
+        }
+        LARGE_INTEGER Delay{ .QuadPart = -200'0000 };
+        NtDelayExecution(false, &Delay);
+    }
+    return false;
+}
+
 void CPlayer::StopThreadAudio() noexcept
 {
     m_bStopAudio.store(true, std::memory_order_release);
+    m_ClockAudio.Invalidate();
     m_AudioPlayer.RequestShutdown();
     if (m_ThreadAudio.Get())
     {
@@ -233,13 +242,13 @@ void CPlayer::ReadAudioCover(_In_z_ PCWSTR pszFile) noexcept
         Tag.ReadTag();
         Tag.SimpleGet(mi, {});
     }
-    if (File.GetTagType()& Tag::TAG_APE)
+    if (File.GetTagType() & Tag::TAG_APE)
     {
         Tag::CApe Tag{ File };
         Tag.ReadTag();
         Tag.SimpleGet(mi, {});
     }
-    if (File.GetTagType()& Tag::TAG_FLAC)
+    if (File.GetTagType() & Tag::TAG_FLAC)
     {
         Tag::CFlac Tag{ File };
         Tag.ReadTag();
@@ -258,8 +267,9 @@ void CPlayer::ReadAudioCover(_In_z_ PCWSTR pszFile) noexcept
 
 HRESULT CPlayer::Initialize() noexcept
 {
-    LARGE_INTEGER Dummy;
-    NtQueryPerformanceCounter(&Dummy, &m_QpcFreq);
+    m_ClockVideo.Invalidate();
+    m_ClockAudio.Invalidate();
+
     m_Ffmpeg.InitializeDirect3D(eck::g_pD3D11Device);
     return S_OK;
 }
@@ -272,31 +282,41 @@ int CPlayer::OpenFile(std::wstring_view svFile) noexcept
     m_Ffmpeg.Stop();
     StopThreadAudio();
 
-    m_bLastVideoPtsValid = false;
-    m_ptsLastVideo = 0.;
+    m_ClockVideo.Invalidate();
+    m_ClockAudio.Invalidate();
 
     m_pCoverBitmap.Clear();
 
+    const auto bAudioDevice = SUCCEEDED(m_AudioPlayer.Initialize());
+    AoFormat Fmt{};
+    if (bAudioDevice)
+        AoMakeFormat(&m_AudioPlayer.GetWaveFormat(), Fmt);
+    m_Ffmpeg.SwrSetAoFormat(Fmt);
+
     const auto r = m_Ffmpeg.OpenFile(rsPathU8.Data());
     if (r.eType != CFfmpeg::ErrorType::Ok)
-        return r.nCode;
-
-    if (m_Ffmpeg.GetAudioStream() >= 0)
     {
-        UINT nSampleRate, cChannel;
-        m_Ffmpeg.GetAudioFormat(nSampleRate, cChannel);
-        if (SUCCEEDED(m_AudioPlayer.Initialize(nSampleRate, cChannel)))
-        {
-            m_bStopAudio.store(false, std::memory_order_release);
-            m_ThreadAudio.Attach(eck::CrtCreateThread(
-                [](void* p) noexcept -> UINT
-                {
-                    ((CPlayer*)p)->ThreadAudio();
-                    return 0;
-                }, this));
-        }
+        if (bAudioDevice)
+            m_AudioPlayer.Shutdown();
+        return r.nCode;
+    }
+
+    if (m_Ffmpeg.GetAudioStream() >= 0 && bAudioDevice)
+    {
+        m_bStopAudio.store(false, std::memory_order_release);
+        m_ThreadAudio.Attach(eck::CrtCreateThread(
+            [](void* p) noexcept -> UINT
+            {
+                ((CPlayer*)p)->ThreadAudio();
+                return 0;
+            }, this));
         if (m_Ffmpeg.GetVideoStream() < 0)
             ReadAudioCover(svFile.data());
+    }
+    else if (bAudioDevice)
+    {
+        m_AudioPlayer.Shutdown();
+        m_Ffmpeg.SwrSetAoFormat({});
     }
 
     return r.nCode;
@@ -342,29 +362,24 @@ bool CPlayer::VideoPopFrame(
     return true;
 }
 
-void CPlayer::VideoSetCurrentPresentTimestamp(double pts) noexcept
+void CPlayer::VideoAnchorClock(double pts) noexcept
 {
-    m_ptsLastVideo.store(pts, std::memory_order_relaxed);
-    NtQueryPerformanceCounter(&m_QpcDisplay, nullptr);
-    m_bLastVideoPtsValid.store(true, std::memory_order_release);
+    m_ClockVideo.Set(pts);
 }
 
 void CPlayer::Seek(double s) noexcept
 {
     m_Ffmpeg.Seek(s);
-    m_AudioPlayer.Seek(s);
-    VideoSetCurrentPresentTimestamp(s);
+    m_ClockAudio.Invalidate();
+    m_AudioPlayer.RequestSeek();
+    VideoAnchorClock(s);
 }
 
 double CPlayer::VideoGetMasterClock() noexcept
 {
-    const auto pts = m_AudioPlayer.GetCurrentTime();
-    if (pts >= 0.)
-        return pts;
-    if (!m_bLastVideoPtsValid)
-        return 0.;
-    LARGE_INTEGER Qpc;
-    NtQueryPerformanceCounter(&Qpc, nullptr);
-    return m_ptsLastVideo +
-        double(Qpc.QuadPart - m_QpcDisplay.QuadPart) / m_QpcFreq.QuadPart;
+    if (m_ClockAudio.IsValid())
+        return m_ClockAudio.Get();
+    if (m_ClockVideo.IsValid())
+        return m_ClockVideo.Get();
+    return CClock::None;
 }

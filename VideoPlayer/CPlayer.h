@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "CAudioPlayer.h"
 #include "CFfmpeg.h"
+#include "CClock.h"
 
 class CPlayer final
 {
@@ -31,16 +32,16 @@ private:
     eck::CWaitableObject m_ThreadAudio{};
     std::atomic<bool> m_bStopAudio{};
 
-    LARGE_INTEGER m_QpcFreq{};
-    LARGE_INTEGER m_QpcDisplay{};
-    std::atomic<double> m_ptsLastVideo{};
-    std::atomic<bool> m_bLastVideoPtsValid{};
+    CClock m_ClockVideo{};
+    CClock m_ClockAudio{};
 
     SwsContext* m_pSws{};
 
     ComPtr<IWICBitmapSource> m_pCoverBitmap{};
 
     void ThreadAudio() noexcept;
+
+    bool ReopenAudioDevice() noexcept;
 
     void StopThreadAudio() noexcept;
 
@@ -64,11 +65,7 @@ public:
 
     double VideoGetMasterClock() noexcept;
 
-    void VideoSetCurrentPresentTimestamp(double pts) noexcept;
-    bool VideoIsLastPresentTimestampValid() const noexcept
-    {
-        return m_bLastVideoPtsValid.load(std::memory_order_acquire);
-    }
+    void VideoAnchorClock(double pts) noexcept;
 
     USHORT GetSeekSerial() const noexcept
     {

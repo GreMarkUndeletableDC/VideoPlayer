@@ -1,13 +1,18 @@
 ﻿#include "pch.h"
 #include "CAudioPlayer.h"
 
-HRESULT CAudioPlayer::Initialize(UINT nSampleRate, UINT cChannel) noexcept
+static EckInlineNdCe bool IsDeviceLost(HRESULT hr) noexcept
+{
+    return
+        hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+        hr == AUDCLNT_E_SERVICE_NOT_RUNNING ||
+        hr == AUDCLNT_E_RESOURCES_INVALIDATED;
+}
+
+HRESULT CAudioPlayer::Initialize() noexcept
 {
     Shutdown();
     m_bExit.store(false, std::memory_order_release);
-
-    LARGE_INTEGER Dummy;
-    NtQueryPerformanceCounter(&Dummy, &m_QpcFreq);
 
     HRESULT hr;
     hr = m_pDeviceEnumerator.CreateInstance(CLSID_MMDeviceEnumerator);
@@ -27,31 +32,35 @@ HRESULT CAudioPlayer::Initialize(UINT nSampleRate, UINT cChannel) noexcept
     if (FAILED(hr))
         return hr;
 
-    m_cChannel = cChannel;
-    m_nSampleRate = nSampleRate;
-
     WAVEFORMATEX* pwfx;
     hr = m_pClient->GetMixFormat(&pwfx);
     if (FAILED(hr))
         return hr;
 
-    pwfx->nSamplesPerSec = nSampleRate;
-    pwfx->nChannels = cChannel;
-    pwfx->nBlockAlign = (WORD)(pwfx->nChannels * pwfx->wBitsPerSample / 8);
-    pwfx->nAvgBytesPerSec = pwfx->nSamplesPerSec * pwfx->nBlockAlign;
-    pwfx->wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+    DWORD uFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+    AoFormat Fmt;
+    AoMakeFormat(pwfx, Fmt);
+    if (Fmt.IsValid())
+    {
+        m_wfx = {};
+        memcpy(&m_wfx, pwfx, sizeof(WAVEFORMATEX) + pwfx->cbSize);
+    }
+    else
+    {
+        AoMakeFloatWaveFormat(pwfx, m_wfx);
+        uFlags |= (
+            AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+            AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY);
+    }
 
-    constexpr DWORD Flags =
-        AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
-        AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY |
-        AUDCLNT_STREAMFLAGS_EVENTCALLBACK
-        ;
+    eck::CScopeGuard ExitGuard{ [this]() noexcept { Shutdown(); } };
+
     hr = m_pClient->Initialize(
         AUDCLNT_SHAREMODE_SHARED,
-        Flags,
+        uFlags,
         1000 * 10000/* 1秒 */,
         0,
-        pwfx,
+        &m_wfx.Format,
         nullptr);
     CoTaskMemFree(pwfx);
     if (FAILED(hr))
@@ -75,6 +84,7 @@ HRESULT CAudioPlayer::Initialize(UINT nSampleRate, UINT cChannel) noexcept
     hr = m_pClient->Start();
     if (FAILED(hr))
         return hr;
+    ExitGuard.Cancel();
     return S_OK;
 }
 
@@ -97,102 +107,80 @@ void CAudioPlayer::Shutdown() noexcept
     m_pRenderClient.Clear();
     m_pDevice.Clear();
     m_pDeviceEnumerator.Clear();
+    m_wfx = {};
     m_cAudioBuffer = 0;
-    m_cChannel = 0;
-    m_nSampleRate = 0;
-    {
-        const eck::CSrwWriteGuard _{ m_Lock };
-        m_bAnchorValid = false;
-        m_ptsAnchor = 0.;
-        m_QpcAnchor.QuadPart = 0;
-    }
+    m_bSeek.store(false, std::memory_order_release);
 }
 
-void CAudioPlayer::Seek(double pts) noexcept
+void CAudioPlayer::RequestSeek() noexcept
 {
-    LARGE_INTEGER Qpc;
-    NtQueryPerformanceCounter(&Qpc, nullptr);
-    {
-        const eck::CSrwWriteGuard _{ m_Lock };
-        m_ptsAnchor = pts;
-        m_QpcAnchor = Qpc;
-        m_bAnchorValid = true;
-    }
     m_bSeek.store(true, std::memory_order_release);
     m_Event.Signal();
 }
 
-void CAudioPlayer::Reset() noexcept
+CAudioPlayer::WriteState CAudioPlayer::Write(
+    PCVOID pData,
+    UINT cFrames,
+    _Out_ UINT& cWritten) noexcept
 {
-    m_pClient->Stop();
-    m_pClient->Reset();
-    m_pClient->Start();
-}
-
-std::span<float> CAudioPlayer::GetBuffer(UINT cRequested) noexcept
-{
+    cWritten = 0;
     if (!m_pClient || !m_pRenderClient)
-        return {};
+        return WriteState::Exit;
 
-    if (cRequested > m_cAudioBuffer)
-        cRequested = m_cAudioBuffer;
-
+    HRESULT hr;
     EckLoop()
     {
         eck::WaitObject(m_Event);
-        if (m_bExit.load(std::memory_order_acquire) ||
-            m_bSeek.load(std::memory_order_acquire))
-            return {};
+
+        if (m_bExit.load(std::memory_order_acquire))
+            return WriteState::Exit;
+        if (m_bSeek.exchange(false, std::memory_order_acq_rel))
+        {
+            m_pClient->Stop();
+            m_pClient->Reset();
+            m_pClient->Start();
+            return WriteState::Seek;
+        }
 
         UINT32 cPadding{};
-        if (FAILED(m_pClient->GetCurrentPadding(&cPadding)))
-            return {};
-        if (cRequested <= m_cAudioBuffer - cPadding)
-            break;
-    }
+        hr = m_pClient->GetCurrentPadding(&cPadding);
+        if (IsDeviceLost(hr))
+            return WriteState::DeviceLost;
+        if (FAILED(hr))
+            return WriteState::Exit;
 
-    BYTE* pBuffer;
-    if (FAILED(m_pRenderClient->GetBuffer(cRequested, &pBuffer)))
-        return {};
-    return { (float*)pBuffer, (size_t)cRequested * m_cChannel };
+        const UINT cFree = (cPadding < m_cAudioBuffer) ? m_cAudioBuffer - cPadding : 0;
+        if (!cFree)
+            continue;
+
+        const UINT cChunk = std::min(cFrames - cWritten, cFree);
+        BYTE* pBuffer;
+        hr = m_pRenderClient->GetBuffer(cChunk, &pBuffer);
+        if (IsDeviceLost(hr))
+            return WriteState::DeviceLost;
+        if (FAILED(hr))
+            return WriteState::Exit;
+
+        memcpy(
+            pBuffer,
+            (PCBYTE)pData + cWritten * m_wfx.Format.nBlockAlign,
+            cChunk * m_wfx.Format.nBlockAlign);
+
+        hr = m_pRenderClient->ReleaseBuffer(cChunk, 0);
+        if (IsDeviceLost(hr))
+            return WriteState::DeviceLost;
+        if (FAILED(hr))
+            return WriteState::Exit;
+
+        cWritten += cChunk;
+        if (cWritten == cFrames)
+            return WriteState::Ok;
+    }
 }
 
-void CAudioPlayer::ReleaseBuffer(UINT cWritten) noexcept
+UINT CAudioPlayer::GetCurrentPadding() noexcept
 {
-    m_pRenderClient->ReleaseBuffer(cWritten, 0);
-}
-
-void CAudioPlayer::SetCurrentPresentTimestamp(double pts) noexcept
-{
-    if (m_pClient && m_nSampleRate)
-    {
-        UINT32 cPadding{};
-        if (SUCCEEDED(m_pClient->GetCurrentPadding(&cPadding)))
-            pts -= double(cPadding) / double(m_nSampleRate);
-    }
-
-    LARGE_INTEGER Qpc;
-    NtQueryPerformanceCounter(&Qpc, nullptr);
-
-    const eck::CSrwWriteGuard _{ m_Lock };
-    if (m_bAnchorValid)
-    {
-        pts = m_ptsAnchor +
-            double(Qpc.QuadPart - m_QpcAnchor.QuadPart) / m_QpcFreq.QuadPart;
-    }
-    m_ptsAnchor = pts;
-    m_QpcAnchor = Qpc;
-    m_bAnchorValid = true;
-}
-
-double CAudioPlayer::GetCurrentTime() noexcept
-{
-    LARGE_INTEGER Qpc;
-    NtQueryPerformanceCounter(&Qpc, nullptr);
-
-    const eck::CSrwReadGuard _{ m_Lock };
-    if (!m_bAnchorValid)
-        return -1.;
-    return m_ptsAnchor +
-        double(Qpc.QuadPart - m_QpcAnchor.QuadPart) / m_QpcFreq.QuadPart;
+    UINT32 cPadding{};
+    m_pClient->GetCurrentPadding(&cPadding);
+    return cPadding;
 }

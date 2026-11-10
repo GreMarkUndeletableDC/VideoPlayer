@@ -9,92 +9,118 @@ void CFfmpeg::InitializeDirect3D(ID3D11Device* pDevice) noexcept
         pMt->SetMultithreadProtected(TRUE);
 }
 
-bool CFfmpeg::WriteAudioFrame(
-    _In_ const AVFrame* pFrame,
-    UINT cChannel,
-    _Out_writes_(cChannel* pFrame->nb_samples) float* pBuf) noexcept
+void CFfmpeg::SwrFree() noexcept
 {
-    const auto cBuf = cChannel * pFrame->nb_samples;
-    switch (pFrame->format)
+    swr_free(&m_pSwr);
+    av_channel_layout_uninit(&m_SwrInLayout);
+    av_channel_layout_uninit(&m_SwrOutLayout);
+    m_nSwrInRate = 0;
+    m_eSwrInFormat = AV_SAMPLE_FMT_NONE;
+}
+
+void CFfmpeg::SwrSetAoFormat(const AoFormat& Format) noexcept
+{
     {
-    case AV_SAMPLE_FMT_U8:
+        const eck::CCsGuard _{ m_Lock };
+        m_OutFormat = Format;
+    }
+    m_nFormatSerial.fetch_add(1, std::memory_order_acq_rel);
+    m_qAudioDecoded.Clear();
+}
+
+AoFormat CFfmpeg::SwrEnsureValid(_In_ const AVFrame* pFrame) noexcept
+{
+    AoFormat Out;
     {
-        auto p = (BYTE*)pFrame->data[0];
-        const auto pEnd = p + cBuf;
-        for (; p < pEnd; ++p)
-            *pBuf++ = (float(*p) - 128.f) / 128.f;
+        const eck::CCsGuard _{ m_Lock };
+        Out = m_OutFormat;
     }
-    break;
-    case AV_SAMPLE_FMT_S16:
+
+    if (!Out.IsValid())
+        return {};
+
+    const auto eInFormat = (AVSampleFormat)pFrame->format;
+    if (m_pSwr &&
+        m_nSwrInRate == pFrame->sample_rate &&
+        m_eSwrInFormat == eInFormat &&
+        av_channel_layout_compare(&m_SwrInLayout, &pFrame->ch_layout) == 0)
+        return Out;
+
+    SwrFree();
+
+    // AV_CH_LAYOUT_*与SPEAKER_*定义相同
+    if (Out.dwChannelMask)
+        av_channel_layout_from_mask(&m_SwrOutLayout, Out.dwChannelMask);
+    if ((UINT)m_SwrOutLayout.nb_channels != Out.cChannel)
     {
-        auto p = (short*)pFrame->data[0];
-        const auto pEnd = p + cBuf;
-        for (; p < pEnd; ++p)
-            *pBuf++ = (float(*p) / 32768.f);
+        av_channel_layout_uninit(&m_SwrOutLayout);
+        av_channel_layout_default(&m_SwrOutLayout, (int)Out.cChannel);
     }
-    break;
-    case AV_SAMPLE_FMT_S32:
+
+    if (swr_alloc_set_opts2(
+        &m_pSwr,
+        &m_SwrOutLayout,
+        Out.eSampleFormat,
+        (int)Out.nSampleRate,
+        &pFrame->ch_layout,
+        eInFormat,
+        pFrame->sample_rate,
+        0,
+        nullptr) < 0)
     {
-        auto p = (int*)pFrame->data[0];
-        const auto pEnd = p + cBuf;
-        for (; p < pEnd; ++p)
-            *pBuf++ = (float(*p) / 2147483648.f);
+        SwrFree();
+        return {};
     }
-    break;
-    case AV_SAMPLE_FMT_FLT:
-        memcpy(pBuf, pFrame->data[0], cBuf * sizeof(float));
-        break;
-    case AV_SAMPLE_FMT_DBL:
+
+    if (swr_init(m_pSwr) < 0)
     {
-        auto p = (double*)pFrame->data[0];
-        const auto pEnd = p + cBuf;
-        for (; p < pEnd; ++p)
-            *pBuf++ = float(*p);
+        SwrFree();
+        return {};
     }
-    break;
-    case AV_SAMPLE_FMT_U8P:
-    {
-        const auto p = (BYTE**)pFrame->data;
-        for (UINT i = 0; i < cBuf; ++i)
-            for (UINT j = 0; j < cChannel; ++j)
-                *pBuf++ = (float(p[j][i]) - 128.f) / 128.f;
-    }
-    break;
-    case AV_SAMPLE_FMT_S16P:
-    {
-        const auto p = (short**)pFrame->data;
-        for (int i = 0; i < pFrame->nb_samples; ++i)
-            for (UINT j = 0; j < cChannel; ++j)
-                *pBuf++ = (float(p[j][i]) / 32768.f);
-    }
-    break;
-    case AV_SAMPLE_FMT_S32P:
-    {
-        const auto p = (int**)pFrame->data;
-        for (int i = 0; i < pFrame->nb_samples; ++i)
-            for (UINT j = 0; j < cChannel; ++j)
-                *pBuf++ = (float(p[j][i]) / 2147483648.f);
-    }
-    break;
-    case AV_SAMPLE_FMT_FLTP:
-    {
-        const auto p = (float**)pFrame->data;
-        for (int i = 0; i < pFrame->nb_samples; ++i)
-            for (UINT j = 0; j < cChannel; ++j)
-                *pBuf++ = p[j][i];
-    }
-    break;
-    case AV_SAMPLE_FMT_DBLP:
-    {
-        const auto p = (double**)pFrame->data;
-        for (int i = 0; i < pFrame->nb_samples; ++i)
-            for (UINT j = 0; j < cChannel; ++j)
-                *pBuf++ = float(p[j][i]);
-    }
-    break;
-    default: return false;
-    }
-    return true;
+
+    m_nSwrInRate = pFrame->sample_rate;
+    m_eSwrInFormat = eInFormat;
+    av_channel_layout_copy(&m_SwrInLayout, &pFrame->ch_layout);
+    return Out;
+}
+
+FfPtr<AVFrame> CFfmpeg::SwrConvertAudio(_In_ const AVFrame* pFrame) noexcept
+{
+    if (pFrame->nb_samples <= 0)
+        return {};
+    const auto Out = SwrEnsureValid(pFrame);
+    if (!Out.IsValid())
+        return {};
+
+    const auto cOutMax = swr_get_out_samples(m_pSwr, pFrame->nb_samples);
+    if (cOutMax <= 0)
+        return {};
+    FfPtr<AVFrame> pOut{ av_frame_alloc() };
+    if (!pOut)
+        return {};
+
+    pOut->format = (int)Out.eSampleFormat;
+    pOut->sample_rate = (int)Out.nSampleRate;
+    pOut->nb_samples = cOutMax;
+    av_channel_layout_copy(&pOut->ch_layout, &m_SwrOutLayout);
+    if (av_frame_get_buffer(pOut.Get(), 0) < 0)
+        return {};
+
+    BYTE* pDst = pOut->extended_data[0];
+    const auto cOut = swr_convert(
+        m_pSwr,
+        &pDst,
+        cOutMax,
+        (const BYTE**)pFrame->extended_data,
+        pFrame->nb_samples);
+    if (cOut <= 0)
+        return {};
+
+    pOut->nb_samples = cOut;
+    pOut->pts = pFrame->pts;
+    pOut->best_effort_timestamp = pFrame->best_effort_timestamp;
+    pOut->opaque = pFrame->opaque;
+    return pOut;
 }
 
 void CFfmpeg::ThreadVideoDecode() noexcept
@@ -154,6 +180,7 @@ void CFfmpeg::ThreadAudioDecode() noexcept
     int r;
     FfPtr<AVPacket> pPacket;
     auto nSerial = m_nSeekSerial.load(std::memory_order_acquire);
+    auto nFormatSerial = m_nFormatSerial.load(std::memory_order_acquire);
     while (!m_bStopDecode.load(std::memory_order_acquire))
     {
         if (!pPacket)
@@ -172,6 +199,12 @@ void CFfmpeg::ThreadAudioDecode() noexcept
         {
             nSerial = n;
             avcodec_flush_buffers(m_pAudioCodecCtx.Get());
+            SwrFree();
+        }
+        if (const auto s = m_nFormatSerial.load(std::memory_order_acquire); s != nFormatSerial)
+        {
+            nFormatSerial = s;
+            SwrFree();
         }
 
         r = avcodec_send_packet(m_pAudioCodecCtx.Get(), pPacket.Get());
@@ -183,17 +216,38 @@ void CFfmpeg::ThreadAudioDecode() noexcept
         else if (!r)
             pPacket.Clear();
 
-        FfPtr<AVFrame> pFrame{ av_frame_alloc() };
-        if (!pFrame)
-            break;
-        r = avcodec_receive_frame(m_pAudioCodecCtx.Get(), pFrame.Get());
-        if (r)
-            continue;
+        bool bStop{};
+        EckLoop()
+        {
+            FfPtr<AVFrame> pFrame{ av_frame_alloc() };
+            if (!pFrame)
+            {
+                bStop = true;
+                break;
+            }
+            r = avcodec_receive_frame(m_pAudioCodecCtx.Get(), pFrame.Get());
+            if (r)
+                break;
 
-        pFrame->opaque = eck::DwordToPointer<void*>(nSerial);
-        if (!m_qAudioDecoded.Push(std::move(pFrame)))
+            pFrame->opaque = eck::DwordToPointer<void*>(
+                (DWORD(nFormatSerial) << 16) | nSerial);
+
+            auto pOut = SwrConvertAudio(pFrame.Get());
+            pFrame.Clear();
+            if (!pOut)
+                continue;
+            if (m_nFormatSerial.load(std::memory_order_acquire) != nFormatSerial)
+                continue;
+            if (!m_qAudioDecoded.Push(std::move(pOut)))
+            {
+                bStop = true;
+                break;
+            }
+        }
+        if (bStop)
             break;
     }
+    SwrFree();
 }
 
 void CFfmpeg::ThreadDemux() noexcept
@@ -204,7 +258,7 @@ void CFfmpeg::ThreadDemux() noexcept
     {
         if (const auto s = m_ptsSeek.exchange(-1., std::memory_order_acq_rel); s >= 0.)
         {
-            const auto ts = int64_t(s * AV_TIME_BASE);
+            const auto ts = int64_t((s + m_ptsStart) * AV_TIME_BASE);
             r = av_seek_frame(m_pFmtCtx.Get(), -1, ts, AVSEEK_FLAG_BACKWARD);
             if (r < 0)
                 r = avformat_seek_file(
@@ -366,6 +420,11 @@ CFfmpeg::Result CFfmpeg::OpenFile(_In_z_ PCSTR pszPathU8) noexcept
     if (r)
         return { ErrorType::StreamInformation, r };
 
+    m_ptsStart =
+        (m_pFmtCtx->start_time != AV_NOPTS_VALUE) ?
+        (double)m_pFmtCtx->start_time * av_q2d(AV_TIME_BASE_Q) :
+        0.;
+
     m_idxStreamVideo = av_find_best_stream(m_pFmtCtx.Get(),
         AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
     if (m_idxStreamVideo >= 0)
@@ -435,6 +494,7 @@ CFfmpeg::Result CFfmpeg::OpenFile(_In_z_ PCSTR pszPathU8) noexcept
 void CFfmpeg::Stop() noexcept
 {
     StopDecodeThread();
+    SwrFree();
     m_qVideo.Clear();
     m_qAudio.Clear();
     m_qVideoDecoded.Clear();
@@ -444,27 +504,25 @@ void CFfmpeg::Stop() noexcept
     m_pFmtCtx.Clear();
     m_idxStreamVideo = -1;
     m_idxStreamAudio = -1;
+    m_ptsStart = 0.;
     m_ptsSeek.store(-1., std::memory_order_release);
 }
 
-double CFfmpeg::GetPresentTimestamp(
-    _In_ const AVFrame* pFrame,
-    int idxStream) noexcept
+double CFfmpeg::GetPresentTimestamp(_In_ const AVFrame* pFrame, int idxStream) const noexcept
 {
-    const auto& Stream = *m_pFmtCtx->streams[idxStream];
-    const auto ptsStart = (Stream.start_time == AV_NOPTS_VALUE) ? 0 : Stream.start_time;
     const auto d =
-        (pFrame->best_effort_timestamp - ptsStart) *
-        av_q2d(Stream.time_base);
+        pFrame->best_effort_timestamp *
+        av_q2d(m_pFmtCtx->streams[idxStream]->time_base) -
+        m_ptsStart;
     return std::max(d, 0.);
 }
-
-void CFfmpeg::GetAudioFormat(
-    _Out_ UINT& nSampleRate,
-    _Out_ UINT& cChannel) noexcept
+double CFfmpeg::GetAudioPresentTimestamp(_In_ const AVFrame* pFrame) const noexcept
 {
-    nSampleRate = m_pAudioCodecCtx->sample_rate;
-    cChannel = m_pAudioCodecCtx->ch_layout.nb_channels;
+    return GetPresentTimestamp(pFrame, m_idxStreamAudio);
+}
+double CFfmpeg::GetVideoPresentTimestamp(_In_ const AVFrame* pFrame) const noexcept
+{
+    return GetPresentTimestamp(pFrame, m_idxStreamVideo);
 }
 
 void CFfmpeg::Seek(double s) noexcept
